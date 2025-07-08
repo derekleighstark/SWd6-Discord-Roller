@@ -40,7 +40,6 @@ def load_sheets():
     content = data.get('content', '')
     return json.loads(base64.b64decode(content))
 
-
 def save_sheets(sheets, msg='Update character sheets'):
     r = requests.get(API_URL_BASE, headers=HEADERS)
     sha = r.json().get('sha') if r.status_code == 200 else None
@@ -100,9 +99,9 @@ def roll_reup(pool: int, modifier: int = 0):
     total = sum(std_rolls) + sum(wild_rolls) + modifier
     return std_rolls, wild_rolls, explosions, complication, total
 
-# Dice roll command
+# Dice roll command with notes
 @bot.command(name='roll')
-async def roll_command(ctx, pool: int, modifier: int = 0, image_url: str = None):
+async def roll_command(ctx, pool: int, modifier: int = 0, image_url: str = None, *, notes: str = None):
     std, wild, explosions, complication, total = roll_reup(pool, modifier)
     # Build composite image
     images = [Image.open(f"static/d6_std_{d}.png") for d in std] + \
@@ -121,6 +120,7 @@ async def roll_command(ctx, pool: int, modifier: int = 0, image_url: str = None)
     # Build embed
     embed = discord.Embed(
         title=f"🎲 {ctx.author.display_name} rolled {pool}D6 {'+'+str(modifier) if modifier else ''}",
+        description=notes or discord.Embed.Empty,
         color=discord.Color.gold()
     )
     if image_url:
