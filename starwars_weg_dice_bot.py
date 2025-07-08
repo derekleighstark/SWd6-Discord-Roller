@@ -1,8 +1,19 @@
+# ⚠️ Setup Instructions
+# 1. Create a file named ".env" in the project root.
+# 2. Inside .env, add:
+#    DISCORD_TOKEN=YOUR_BOT_TOKEN_HERE
+# 3. Make sure python-dotenv is installed (pip install python-dotenv).
+
 import os
 import random
 import discord
 from discord.ext import commands
 from collections import deque
+# Optional: Load environment variables from a .env file
+from dotenv import load_dotenv
+
+# Load .env if present
+load_dotenv()
 
 # Star Wars WEG D6 Dice Roller Bot
 # Supports: 1st Edition (1e) and Revised & Updated (reup)
@@ -60,7 +71,6 @@ async def on_ready():
 
 @bot.command(name='roll', help='Roll WEG D6. Usage: !roll [edition] <pool> [modifier]  (edition: 1e, reup)')
 async def roll(ctx, *args):
-    # Parse args: optional edition
     edition = 'reup'
     try:
         if len(args) >= 2 and args[0].lower() in ('1e', 'reup'):
@@ -73,17 +83,14 @@ async def roll(ctx, *args):
     except (ValueError, IndexError):
         return await ctx.send("Usage: !roll [edition] <pool> [modifier]  (edition: 1e, reup)")
 
-    # Perform roll
     if edition == '1e':
         result = roll_1e(pool, modifier)
     else:
         result = roll_reup(pool, modifier)
 
-    # Record history
     user_hist = roll_history.setdefault(ctx.author.id, deque(maxlen=10))
     user_hist.append(result)
 
-    # Build response
     roll_str = ', '.join(str(r) for r in result['rolls'])
     desc = f"🎲 {ctx.author.display_name} rolled ({result['edition']}) {result['pool']}D6 {'+'+str(result['modifier']) if result['modifier'] else ''}: {roll_str}\n"
     if edition == 'reup':
@@ -109,8 +116,9 @@ async def history(ctx):
     await ctx.send(f"{ctx.author.display_name}'s rolls:\n" + "\n".join(lines))
 
 if __name__ == '__main__':
-    TOKEN = os.getenv('655f674042c8295dd8b33b779bb73ab27bbe1c41a5b6cd17d5a7d1681d16bfe0')
+    TOKEN = os.getenv('DISCORD_TOKEN')
     if not TOKEN:
         print("Error: DISCORD_TOKEN environment variable not set.")
+        print("Make sure you have a .env file or environment variable DISCORD_TOKEN defined.")
     else:
         bot.run(TOKEN)
