@@ -108,19 +108,16 @@ async def roll_cmd(ctx, *args):
         await ctx.send("Usage: !roll <pool> [modifier] [image_url] [notes]")
         return
 
-    # Parse pool
+    # 1️⃣ Parse pool
     try:
         pool = int(args[0])
     except ValueError:
         await ctx.send("❌ Pool must be an integer.")
         return
 
+    # 2️⃣ Parse optional modifier
     modifier = 0
-    url = None
-    notes = None
     idx = 1
-
-    # Optional modifier
     if idx < len(args):
         try:
             modifier = int(args[idx])
@@ -128,27 +125,40 @@ async def roll_cmd(ctx, *args):
         except ValueError:
             modifier = 0
 
-    # Optional image URL
+    # 3️⃣ Parse optional image URL
+    url = None
     if idx < len(args) and args[idx].startswith(("http://", "https://")):
         url = args[idx]
         idx += 1
 
-    # Optional notes
+    # 4️⃣ Parse optional notes
+    notes = None
     if idx < len(args):
         notes = " ".join(args[idx:])
         if (notes.startswith('"') and notes.endswith('"')) or (notes.startswith("'") and notes.endswith("'")):
             notes = notes[1:-1]
 
-    # Roll the dice
+    # 5️⃣ Perform the roll
     std_dice, wild_rolls, modifier, explosions, complication, total = roll_reup(pool, modifier)
 
-    # Build embed
-    embed = discord.Embed(color=0xFFD700)
+    # 6️⃣ Detect true Critical Failure: initial wild=1 → complication, then reroll wild=1
+    critical_failure = False
+    if complication and len(wild_rolls) >= 2 and wild_rolls[1] == 1:
+        critical_failure = True
+
+    # 7️⃣ Build the embed header
+    if critical_failure:
+        embed = discord.Embed(title="🚨 Critical Failure on ReUP Roll!", color=0xFF0000)
+    else:
+        embed = discord.Embed(title=f"🎲 {ctx.author.display_name} rolled {pool}D6", color=0xFFD700)
+
+    # 8️⃣ Attach notes & thumbnail
     if notes:
         embed.description = notes
     if url:
         embed.set_thumbnail(url=url)
 
+    # 9️⃣ Add fields
     embed.add_field(name="Standard Dice", value=", ".join(map(str, std_dice)) or "None", inline=False)
     embed.add_field(name="Wild Die", value=", ".join(map(str, wild_rolls)), inline=False)
     embed.add_field(name="Modifier", value=str(modifier), inline=False)
@@ -156,7 +166,7 @@ async def roll_cmd(ctx, *args):
     embed.add_field(name="Complication", value="Yes" if complication else "No", inline=False)
     embed.add_field(name="Total", value=str(total), inline=False)
 
-    # Composite dice image
+    #  🔟 Composite dice image (unchanged)
     images = []
     for pip in std_dice:
         images.append(Image.open(f"static/d6_std_{pip}.png"))
@@ -171,7 +181,7 @@ async def roll_cmd(ctx, *args):
         combined.paste(im, (x_offset, 0))
         x_offset += im.width
 
-    # Resize to 32px height
+    # Resize to 32px height using LANCZOS
     scale = 32 / heights[0]
     combined = combined.resize((int(total_w * scale), 32), Image.LANCZOS)
 
