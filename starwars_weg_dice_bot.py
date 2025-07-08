@@ -263,3 +263,12 @@ async def char_show(ctx, name: str):
 
 @char.command(name='list')
 async def char_list(ctx):
+    uid = str(ctx.author.id)
+    names = character_sheets.get(uid, {}).keys()
+    if not names:
+        await ctx.send("No characters registered.")
+        return
+    char_list_str = '
+'.join(names)
+    await ctx.send(f"📜 {ctx.author.display_name}'s characters:
+{char_list_str}")
