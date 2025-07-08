@@ -52,10 +52,10 @@ def roll_reup(pool: int, modifier: int = 0):
     explosions = 0
     complication = False
     critical_failure = False
-    # standard dice
+    # Roll standard dice (pool - 1)
     for _ in range(max(0, pool - 1)):
         std_rolls.append(random.randint(1, 6))
-    # wild die initial
+    # Roll initial Wild Die
     initial = random.randint(1, 6)
     wild_rolls.append(initial)
     if initial == 1:
@@ -70,7 +70,7 @@ def roll_reup(pool: int, modifier: int = 0):
         wild = new_wild
     else:
         wild = initial
-    # wild explosions only
+    # Explosions on Wild Die only
     while wild == 6:
         explosions += 1
         wild = random.randint(1, 6)
@@ -86,36 +86,35 @@ async def on_ready():
 @bot.command(name='roll', help='Roll ReUP WEG D6: !roll <pool> [modifier] [character_image_url]')
 async def roll(ctx, pool: int, modifier: int = 0, character_image_url: str = None):
     std_rolls, wild_rolls, explosions, complication, critical_failure, total = roll_reup(pool, modifier)
-    # store history
+    # Store in history
     user_hist = roll_history.setdefault(ctx.author.id, deque(maxlen=10))
     user_hist.append((std_rolls, wild_rolls, explosions, complication, critical_failure, total))
-    # critical fail
+    # Handle critical failure
     if critical_failure:
         return await ctx.send(f"🚨 {ctx.author.display_name} suffered a Critical Failure on {pool}D6!")
-    # build composite image
+    # Build composite image
     images = [Image.open(f"static/d6_std_{pip}.png") for pip in std_rolls]
-    images += [Image.open("static/d6_wild.png") for _ in wild_rolls]
+    images += [Image.open(f"static/d6_wild_{pip}.png") for pip in wild_rolls]
     widths, heights = zip(*(img.size for img in images))
     total_w, max_h = sum(widths), max(heights)
     combined = Image.new('RGBA', (total_w, max_h), (0,0,0,0))
-    x = 0
+    x_offset = 0
     for img in images:
-        combined.paste(img, (x, 0))
-        x += img.width
-    # resize height 32px
+        combined.paste(img, (x_offset, 0))
+        x_offset += img.width
+    # Resize height 32px
     scale = 32 / max_h
     combined = combined.resize((int(total_w * scale), 32), Image.LANCZOS)
     buf = io.BytesIO()
     combined.save(buf, format='PNG')
     buf.seek(0)
-    # build embed
+    # Build embed with text fields and image
     embed = discord.Embed(
         title=f"🎲 {ctx.author.display_name} rolled ReUP {pool}D6 {'+'+str(modifier) if modifier else ''}",
         color=discord.Color.gold()
     )
     if character_image_url:
         embed.set_thumbnail(url=character_image_url)
-    # text details inside embed
     embed.add_field(name='Standard Dice', value=', '.join(map(str,std_rolls)) or 'None', inline=False)
     embed.add_field(name='Wild Die', value=', '.join(map(str,wild_rolls)), inline=False)
     embed.add_field(name='Modifier', value=str(modifier), inline=True)
