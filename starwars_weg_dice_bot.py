@@ -68,15 +68,13 @@ intents = discord.Intents.default()
 intents.message_content = True
 bot = commands.Bot(command_prefix='!', intents=intents)
 
-# ReUP roll logic for Revised & Updated
+# ReUP roll logic
 def roll_reup(pool: int, modifier: int = 0):
     std_rolls, wild_rolls = [], []
     explosions = 0
     complication = False
-    # Roll standard dice (pool - 1)
     for _ in range(max(0, pool - 1)):
         std_rolls.append(random.randint(1, 6))
-    # Roll wild die
     w0 = random.randint(1, 6)
     wild_rolls.append(w0)
     if w0 == 1:
@@ -86,12 +84,10 @@ def roll_reup(pool: int, modifier: int = 0):
         w1 = random.randint(1, 6)
         wild_rolls.append(w1)
         if w1 == 1:
-            total = modifier
-            return std_rolls, wild_rolls, 0, True, total
+            return std_rolls, wild_rolls, 0, True, modifier
         current = w1
     else:
         current = w0
-    # Explosions on wild
     while current == 6:
         explosions += 1
         current = random.randint(1, 6)
@@ -99,14 +95,14 @@ def roll_reup(pool: int, modifier: int = 0):
     total = sum(std_rolls) + sum(wild_rolls) + modifier
     return std_rolls, wild_rolls, explosions, complication, total
 
-# Dice roll command with notes and auto-deletion to prevent URL preview
+# Dice roll command with notes and embed suppression
 @bot.command(name='roll')
 async def roll_command(ctx, pool: int, modifier: int = 0, image_url: str = None, *, notes: str = None):
-    # Delete the invoking message to suppress automatic URL unfurling
+    # Suppress original URL unfurling rather than deleting message
     try:
-        await ctx.message.delete()
-    except discord.Forbidden:
-        pass  # bot lacks permission to delete messages
+        await ctx.message.suppress_embeds(True)
+    except Exception:
+        pass
 
     std, wild, explosions, complication, total = roll_reup(pool, modifier)
     # Build composite image
@@ -123,7 +119,7 @@ async def roll_command(ctx, pool: int, modifier: int = 0, image_url: str = None,
     buf = io.BytesIO()
     combined.save(buf, 'PNG')
     buf.seek(0)
-    # Build embed
+
     embed = discord.Embed(
         title=f"🎲 {ctx.author.display_name} rolled {pool}D6 {'+'+str(modifier) if modifier else ''}",
         description=notes or discord.Embed.Empty,
