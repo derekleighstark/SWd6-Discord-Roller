@@ -32,7 +32,7 @@ bot = commands.Bot(command_prefix='!', intents=intents)
 # History storage: user_id -> deque of last 10 roll dicts
 roll_history = {}
 
-# ReUP roll function with separate standard and wild dice
+# ReUP roll function with separate standard and wild dice, tracking initial Wild
 def roll_reup(pool: int, modifier: int = 0):
     # initialize
     std_rolls = []
@@ -45,32 +45,38 @@ def roll_reup(pool: int, modifier: int = 0):
     for _ in range(max(0, pool - 1)):
         std_rolls.append(random.randint(1, 6))
 
-    # Wild Die initial roll
-    wild = random.randint(1, 6)
-    # Check complication
-    if wild == 1:
+    # Roll initial Wild Die
+    initial_wild = random.randint(1, 6)
+    wild_rolls.append(initial_wild)
+
+    # Check complication on initial Wild
+    if initial_wild == 1:
         complication = True
         # remove highest standard die if exists
         if std_rolls:
             std_rolls.remove(max(std_rolls))
-        # re-roll wild once
-        wild = random.randint(1, 6)
-        if wild == 1:
+        # re-roll Wild once
+        new_wild = random.randint(1, 6)
+        wild_rolls.append(new_wild)
+        if new_wild == 1:
             # critical failure: no further rolls
             critical_failure = True
             return {
                 'pool': pool,
                 'modifier': modifier,
                 'std_rolls': std_rolls,
-                'wild_rolls': [],
+                'wild_rolls': wild_rolls,
                 'explosions': 0,
                 'complication': True,
                 'critical_failure': True,
                 'total': modifier
             }
-    # record wild
-    wild_rolls.append(wild)
-    # Wild Die explosions
+        # set wild for explosion chain
+        wild = new_wild
+    else:
+        wild = initial_wild
+
+    # Handle Wild Die explosions (only on chain starting from non-1)
     while wild == 6:
         explosions += 1
         wild = random.randint(1, 6)
@@ -115,7 +121,7 @@ async def roll(ctx, pool: int, modifier: int = 0):
     # Standard dice field
     std_val = ', '.join(str(d) for d in res['std_rolls']) or 'None'
     embed.add_field(name='Standard Dice', value=std_val, inline=False)
-    # Wild dice field, colored via embed color highlight
+    # Wild dice field, first value is initial, then any rerolls/explosions
     wild_val = ', '.join(str(d) for d in res['wild_rolls'])
     embed.add_field(name='Wild Die', value=wild_val, inline=False)
 
