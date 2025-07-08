@@ -159,12 +159,15 @@ async def roll_cmd(ctx, *args):
         embed.set_thumbnail(url=url)
 
     # 9️⃣ Add fields
-    embed.add_field(name="Standard Dice", value=", ".join(map(str, std_dice)) or "None", inline=False)
-    embed.add_field(name="Wild Die", value=", ".join(map(str, wild_rolls)), inline=False)
-    embed.add_field(name="Modifier", value=str(modifier), inline=False)
-    embed.add_field(name="Explosions", value=str(explosions), inline=False)
-    embed.add_field(name="Complication", value="Yes" if complication else "No", inline=False)
-    embed.add_field(name="Total", value=str(total), inline=False)
+embed.add_field(name="Standard Dice", value=", ".join(map(str, std_dice)) or "None", inline=False)
+embed.add_field(name="Wild Die",       value=", ".join(map(str, wild_rolls)),      inline=False)
+
+# This trio will line up side-by-side
+embed.add_field(name="Modifier",       value=str(modifier),                         inline=True)
+embed.add_field(name="Explosions",     value=str(explosions),                       inline=True)
+embed.add_field(name="Complication",   value="Yes" if complication else "No",       inline=True)
+
+embed.add_field(name="Total",          value=str(total),                            inline=False)
 
     #  🔟 Composite dice image (unchanged)
     images = []
