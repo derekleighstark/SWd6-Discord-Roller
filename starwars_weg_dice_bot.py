@@ -1,3 +1,4 @@
+```python
 import os
 import random
 import io
@@ -17,7 +18,7 @@ load_dotenv()
 DISCORD_TOKEN = os.getenv('DISCORD_TOKEN')
 GITHUB_TOKEN = os.getenv('GITHUB_TOKEN')
 GITHUB_OWNER = os.getenv('GITHUB_OWNER')
-GITHUB_REPO  = os.getenv('GITHUB_REPO')
+GITHUB_REPO = os.getenv('GITHUB_REPO')
 if not DISCORD_TOKEN:
     raise RuntimeError('DISCORD_TOKEN not set')
 if not (GITHUB_TOKEN and GITHUB_OWNER and GITHUB_REPO):
@@ -52,7 +53,8 @@ def save_sheets(sheets, msg='Update sheets'):
     put.raise_for_status()
 
 # Load character sheets
-character_sheets = load_sheets()
+tmp_sheets = load_sheets()
+character_sheets = {k: v for k, v in tmp_sheets.items()}
 
 # Health-check server
 app = Flask(__name__)
@@ -65,12 +67,10 @@ def run_health_server():
     app.run(host='0.0.0.0', port=port)
 
 # Discord bot setup
-token = DISCORD_TOKEN
 intents = discord.Intents.default()
 intents.message_content = True
 bot = commands.Bot(command_prefix='!', intents=intents)
 
-# ReUP roll logic
 def roll_reup(pool: int, modifier: int = 0):
     std_rolls, wild_rolls = [], []
     explosions = 0
@@ -88,7 +88,8 @@ def roll_reup(pool: int, modifier: int = 0):
         w1 = random.randint(1, 6)
         wild_rolls.append(w1)
         if w1 == 1:
-            return std_rolls, wild_rolls, 0, True, modifier
+            total = sum(std_rolls) + modifier
+            return std_rolls, wild_rolls, explosions, True, total
         current = w1
     else:
         current = w0
@@ -100,12 +101,13 @@ def roll_reup(pool: int, modifier: int = 0):
     total = sum(std_rolls) + sum(wild_rolls) + modifier
     return std_rolls, wild_rolls, explosions, complication, total
 
-# Helper to compose embed and image buffer
+
 def _compose_and_send(ctx, pool, modifier, image_url, notes, std, wild, expl, comp, total):
+    # Load images
     imgs = [Image.open(f"static/d6_std_{d}.png") for d in std] + [Image.open(f"static/d6_wild_{d}.png") for d in wild]
     widths, heights = zip(*(i.size for i in imgs))
     total_w, max_h = sum(widths), max(heights)
-    combined = Image.new('RGBA', (total_w, max_h), (0,0,0,0))
+    combined = Image.new('RGBA', (total_w, max_h), (0, 0, 0, 0))
     x_offset = 0
     for img in imgs:
         combined.paste(img, (x_offset, 0))
@@ -123,25 +125,26 @@ def _compose_and_send(ctx, pool, modifier, image_url, notes, std, wild, expl, co
     if image_url:
         embed.set_thumbnail(url=image_url)
     embed.add_field(name='Standard Dice', value=', '.join(map(str, std)) or 'None', inline=False)
-    embed.add_field(name='Wild Die',       value=', '.join(map(str, wild)),           inline=False)
-    embed.add_field(name='Modifier',       value=str(modifier),                     inline=True)
-    embed.add_field(name='Explosions',     value=str(expl),                         inline=True)
-    embed.add_field(name='Complication',   value='Yes' if comp else 'No',            inline=True)
-    embed.add_field(name='Total',          value=str(total),                         inline=True)
+    embed.add_field(name='Wild Die', value=', '.join(map(str, wild)) or 'None', inline=False)
+    embed.add_field(name='Modifier', value=str(modifier), inline=True)
+    embed.add_field(name='Explosions', value=str(expl), inline=True)
+    embed.add_field(name='Complication', value='Yes' if comp else 'No', inline=True)
+    embed.add_field(name='Total', value=str(total), inline=True)
     embed.set_image(url='attachment://dice.png')
     return embed, buf
 
-# Dice roll command parsing all args and suppress URL preview\@bot.command(name='roll')
+@bot.command(name='roll')
 async def roll_cmd(ctx, *args):
-    # Usage: !roll <pool> [modifier] [image_url] [notes]
+    """Usage: !roll <pool> [modifier] [image_url] [notes]"""
     if not args:
         return await ctx.send("Usage: !roll <pool> [modifier] [image_url] [notes]")
-    # suppress URL preview on command message
+    # suppress URL preview
     try:
         await ctx.message.edit(suppress=True)
     except discord.Forbidden:
         pass
-    # parse pool
+    # Parse arguments
+    pool = 0
     try:
         pool = int(args[0])
     except ValueError:
@@ -150,15 +153,12 @@ async def roll_cmd(ctx, *args):
     image_url = None
     notes = None
     idx = 1
-    # parse modifier
     if idx < len(args) and args[idx].lstrip('-').isdigit():
         modifier = int(args[idx])
         idx += 1
-    # parse image_url
     if idx < len(args) and args[idx].startswith(('http://','https://')):
         image_url = args[idx]
         idx += 1
-    # parse notes
     if idx < len(args):
         raw = ' '.join(args[idx:])
         if len(raw) >= 2 and raw[0] == raw[-1] and raw[0] in ('"', "'"):
@@ -169,7 +169,6 @@ async def roll_cmd(ctx, *args):
     embed, buf = _compose_and_send(ctx, pool, modifier, image_url, notes, std, wild, expl, comp, total)
     await ctx.send(embed=embed, file=File(buf, 'dice.png'))
 
-# Character management commands
 @bot.group(name='char')
 async def char(ctx):
     if not ctx.invoked_subcommand:
@@ -188,7 +187,7 @@ async def char_show(ctx, name: str):
     url = character_sheets.get(uid, {}).get(name)
     if not url:
         return await ctx.send(f"❌ No character named '{name}'.")
-    embed = discord.Embed(title=name, color=discord.Color.blue())
+    embed =.discord.Embed(title=name, color=discord.Color.blue())
     embed.set_thumbnail(url=url)
     await ctx.send(embed=embed)
 
@@ -212,6 +211,5 @@ async def char_remove(ctx, name: str):
 
 if __name__ == '__main__':
     threading.Thread(target=run_health_server, daemon=True).start()
-    bot.run(token)
-
-# Note: Ensure "Message Content Intent" is enabled in the Discord Developer Portal
+    bot.run(DISCORD_TOKEN)
+```
