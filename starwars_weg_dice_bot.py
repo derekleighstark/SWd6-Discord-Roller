@@ -53,8 +53,7 @@ character_sheets = load_sheets()
 # Health-check server
 app = Flask(__name__)
 @app.route('/')
-def health():
-    return 'OK', 200
+def health(): return 'OK', 200
 
 def run_health_server():
     port = int(os.getenv('PORT', 5000))
@@ -93,58 +92,52 @@ def roll_reup(pool: int, modifier: int = 0):
     total = sum(std) + sum(wild) + modifier
     return std, wild, explosions, complication, total
 
-# Roll command parsing all args to avoid converter errors
-@bot.command(name='roll')
-async def roll(ctx, *args):
-    # Usage: !roll <pool> [modifier] [image_url] [notes...]
-    if not args:
-        return await ctx.send("Usage: !roll <pool> [modifier] [image_url] [notes]")
-    # pool
-    try:
-        pool = int(args[0])
-    except ValueError:
-        return await ctx.send("First argument must be pool size (int)")
-    modifier = 0
-    image_url = None
-    notes = None
-    idx = 1
-    # modifier
-    if idx < len(args) and args[idx].lstrip('-').isdigit():
-        modifier = int(args[idx]); idx += 1
-    # image_url
-    if idx < len(args) and args[idx].startswith(('http://','https://')):
-        image_url = args[idx]; idx += 1
-    # notes
-    if idx < len(args):
-        raw = ' '.join(args[idx:])
-        if len(raw) >= 2 and raw[0] == raw[-1] and raw[0] in ('"', "'"):
-            notes = raw[1:-1]
-        else:
-            notes = raw
-    # roll
-    std, wild, expl, comp, total = roll_reup(pool, modifier)
-    # compose image
-    imgs = [Image.open(f"static/d6_std_{d}.png") for d in std] + [Image.open(f"static/d6_wild_{d}.png") for d in wild]
-    w,h = zip(*(i.size for i in imgs)); tw,mh = sum(w), max(h)
-    combo = Image.new('RGBA',(tw,mh),(0,0,0,0)); x=0
-    for i in imgs: combo.paste(i,(x,0)); x+=i.width
-    combo = combo.resize((int(tw*32/mh),32),Image.LANCZOS)
-    buf=io.BytesIO(); combo.save(buf,'PNG'); buf.seek(0)
-    # embed
-    em = discord.Embed(
+# Roll command parsing all args
+def _compose_and_send(ctx, pool, modifier, image_url, notes, std, wild, expl, comp, total):
+    # Build composite image
+    imgs = [Image.open(f"static/d6_std_{d}.png") for d in std] + \
+           [Image.open(f"static/d6_wild_{d}.png") for d in wild]
+    widths, heights = zip(*(i.size for i in imgs))
+    total_w, max_h = sum(widths), max(heights)
+    combined = Image.new('RGBA', (total_w, max_h), (0,0,0,0))
+    x=0
+    for i in imgs:
+        combined.paste(i, (x,0)); x+=i.width
+    combined = combined.resize((int(total_w*32/max_h),32), Image.LANCZOS)
+    buf=io.BytesIO(); combined.save(buf,'PNG'); buf.seek(0)
+
+    embed = discord.Embed(
         title=f"🎲 {ctx.author.display_name} rolled {pool}D6 {'+'+str(modifier) if modifier else ''}",
         description=notes or discord.Embed.Empty,
         color=discord.Color.gold()
     )
-    if image_url: em.set_thumbnail(url=image_url)
-    em.add_field('Standard Dice',', '.join(map(str,std)) or 'None',False)
-    em.add_field('Wild Die',', '.join(map(str,wild)),False)
-    em.add_field('Modifier',str(modifier),True)
-    em.add_field('Explosions',str(expl),True)
-    em.add_field('Complication','Yes' if comp else 'No',True)
-    em.add_field('Total',str(total),True)
-    em.set_image(url='attachment://dice.png')
-    await ctx.send(embed=em, file=File(buf,'dice.png'))
+    if image_url:
+        embed.set_thumbnail(url=image_url)
+    embed.add_field(name='Standard Dice', value=', '.join(map(str, std)) or 'None', inline=False)
+    embed.add_field(name='Wild Die',       value=', '.join(map(str, wild)),           inline=False)
+    embed.add_field(name='Modifier',       value=str(modifier),                     inline=True)
+    embed.add_field(name='Explosions',     value=str(expl),                         inline=True)
+    embed.add_field(name='Complication',   value='Yes' if comp else 'No',            inline=True)
+    embed.add_field(name='Total',          value=str(total),                         inline=True)
+    embed.set_image(url='attachment://dice.png')
+    return embed, buf
+
+@bot.command(name='roll')
+async def roll_cmd(ctx, *args):
+    if not args:
+        return await ctx.send("Usage: !roll <pool> [modifier] [image_url] [notes]")
+    # parse args
+    try:
+        pool = int(args[0])
+    except ValueError:
+        return await ctx.send("First argument must be pool (int)")
+    modifier=0; image_url=None; notes=None; idx=1
+    if idx < len(args) and args[idx].lstrip('-').isdigit(): modifier=int(args[idx]); idx+=1
+    if idx < len(args) and args[idx].startswith(('http://','https://')): image_url=args[idx]; idx+=1
+    if idx < len(args): raw=' '.join(args[idx:]); notes=(raw[1:-1] if len(raw)>=2 and raw[0]==raw[-1] and raw[0] in ('"','\'') else raw)
+    std,wild,expl,comp,total = roll_reup(pool, modifier)
+    embed,buf = _compose_and_send(ctx, pool, modifier, image_url, notes, std, wild, expl, comp, total)
+    await ctx.send(embed=embed, file=File(buf, 'dice.png'))
 
 # Character management
 @bot.group(name='char')
@@ -154,35 +147,31 @@ async def char(ctx):
 
 @char.command(name='add')
 async def char_add(ctx, name: str, url: str):
-    uid = str(ctx.author.id)
+    uid=str(ctx.author.id)
     character_sheets.setdefault(uid,{})[name]=url
     save_sheets(character_sheets,msg=f"Add {name}")
     await ctx.send(f"✅ Character '{name}' added.")
 
 @char.command(name='show')
 async def char_show(ctx, name: str):
-    uid = str(ctx.author.id)
-    url = character_sheets.get(uid,{}).get(name)
+    uid=str(ctx.author.id)
+    url=character_sheets.get(uid,{}).get(name)
     if not url: return await ctx.send(f"❌ No '{name}'")
     e=discord.Embed(title=name,color=discord.Color.blue()); e.set_thumbnail(url=url)
     await ctx.send(embed=e)
 
 @char.command(name='list')
 async def char_list(ctx):
-    uid = str(ctx.author.id)
-    names = character_sheets.get(uid,{}).keys()
+    uid=str(ctx.author.id)
+    names=character_sheets.get(uid,{}).keys()
     if not names: return await ctx.send("No characters.")
-    await ctx.send(f"📜 {ctx.author.display_name}'s characters:\n" + "\n".join(names))
+    await ctx.send(f"📜 {ctx.author.display_name}'s characters:\n"+"\n".join(names))
 
 @char.command(name='remove')
 async def char_remove(ctx, name: str):
-    uid = str(ctx.author.id)
-    if name in character_sheets.get(uid,{}):
-        character_sheets[uid].pop(name)
-        save_sheets(character_sheets,msg=f"Remove {name}")
-        await ctx.send(f"🗑️ Character '{name}' removed.")
-    else:
-        await ctx.send(f"❌ No '{name}'")
+    uid=str(ctx.author.id)
+    if name in character_sheets.get(uid,{}): character_sheets[uid].pop(name); save_sheets(character_sheets,msg=f"Remove {name}"); await ctx.send(f"🗑️ '{name}' removed.")
+    else: await ctx.send(f"❌ No '{name}'")
 
 if __name__=='__main__':
     threading.Thread(target=run_health_server,daemon=True).start()
