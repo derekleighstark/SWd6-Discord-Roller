@@ -2,12 +2,13 @@ import os
 import random
 import discord
 from discord.ext import commands
+from discord import File
 from collections import deque
 import threading
 from flask import Flask
 from dotenv import load_dotenv
 
-# Load environment variables
+# Load environment variables from .env if present
 load_dotenv()
 
 # Health-check Flask server for Render
@@ -24,15 +25,15 @@ def run_health_server():
 # Star Wars WEG D6 Dice Roller Bot
 # Supports only Revised & Updated (ReUP) rules with proper Wild Die mechanics
 
-# Configure intents
+# Configure Discord intents
 intents = discord.Intents.default()
 intents.message_content = True
 bot = commands.Bot(command_prefix='!', intents=intents)
 
-# History storage: user_id -> deque of last 10 roll dicts
+# In-memory history storage: user_id -> deque of last 10 roll dicts
 roll_history = {}
 
-# ReUP roll function with separate standard and wild dice, tracking initial Wild
+# ReUP roll function with separate standard and wild dice
 def roll_reup(pool: int, modifier: int = 0):
     # initialize
     std_rolls = []
@@ -41,7 +42,7 @@ def roll_reup(pool: int, modifier: int = 0):
     complication = False
     critical_failure = False
 
-    # Standard dice (pool - 1), no explosions
+    # Roll standard dice (pool - 1), no explosions
     for _ in range(max(0, pool - 1)):
         std_rolls.append(random.randint(1, 6))
 
@@ -49,17 +50,17 @@ def roll_reup(pool: int, modifier: int = 0):
     initial_wild = random.randint(1, 6)
     wild_rolls.append(initial_wild)
 
-    # Check complication on initial Wild
+    # Check for complication on initial Wild
     if initial_wild == 1:
         complication = True
-        # remove highest standard die if exists
+        # remove one highest standard die
         if std_rolls:
             std_rolls.remove(max(std_rolls))
-        # re-roll Wild once
+        # re-roll wild once
         new_wild = random.randint(1, 6)
         wild_rolls.append(new_wild)
         if new_wild == 1:
-            # critical failure: no further rolls
+            # critical failure: no further resolution
             critical_failure = True
             return {
                 'pool': pool,
@@ -71,12 +72,11 @@ def roll_reup(pool: int, modifier: int = 0):
                 'critical_failure': True,
                 'total': modifier
             }
-        # set wild for explosion chain
         wild = new_wild
     else:
         wild = initial_wild
 
-    # Handle Wild Die explosions (only on chain starting from non-1)
+    # Handle explosion chain on wild die
     while wild == 6:
         explosions += 1
         wild = random.randint(1, 6)
@@ -90,7 +90,7 @@ def roll_reup(pool: int, modifier: int = 0):
         'wild_rolls': wild_rolls,
         'explosions': explosions,
         'complication': complication,
-        'critical_failure': False,
+        'critical_failure': critical_failure,
         'total': total
     }
 
@@ -102,45 +102,39 @@ async def on_ready():
 @bot.command(name='roll', help='Roll ReUP WEG D6: !roll <pool> [modifier]')
 async def roll(ctx, pool: int, modifier: int = 0):
     res = roll_reup(pool, modifier)
+
+    # Store in history
     user_hist = roll_history.setdefault(ctx.author.id, deque(maxlen=10))
     user_hist.append(res)
 
-    # Build embed for results
+    # Critical failure response
     if res['critical_failure']:
-        embed = discord.Embed(
-            title=f"🚨 {ctx.author.display_name}'s Critical Failure!",
-            description=f"ReUP {res['pool']}D6",
-            color=discord.Color.dark_red()
-        )
-        return await ctx.send(embed=embed)
+        return await ctx.send(f"🚨 {ctx.author.display_name} suffered a Critical Failure on ReUP {res['pool']}D6!")
 
-    embed = discord.Embed(
-        title=f"🎲 {ctx.author.display_name} rolled ReUP {res['pool']}D6",
-        color=discord.Color.gold()
-    )
-    # Standard dice field
-    std_val = ', '.join(str(d) for d in res['std_rolls']) or 'None'
-    embed.add_field(name='Standard Dice', value=std_val, inline=False)
-    # Wild dice field, first value is initial, then any rerolls/explosions
-    wild_val = ', '.join(str(d) for d in res['wild_rolls'])
-    embed.add_field(name='Wild Die', value=wild_val, inline=False)
+    # Build header and footer text
+    header = f"🎲 {ctx.author.display_name} rolled ReUP {res['pool']}D6 {'+'+str(modifier) if modifier else ''}\n"
+    footer = f"🔀 Total: {res['total']}"
 
-    # Explosions and complications
-    embed.add_field(name='Explosions', value=str(res['explosions']), inline=True)
-    if res['complication']:
-        embed.add_field(name='Complication', value='Yes', inline=True)
+    # Prepare attachments list
+    files = []
+    # Attach standard dice images
+    for idx, pip in enumerate(res['std_rolls']):
+        path = f"static/d6_std_{pip}.png"
+        files.append(File(path, filename=f"std{idx}_{pip}.png"))
+    # Attach wild die images
+    for idx, pip in enumerate(res['wild_rolls']):
+        path = "static/d6_wild.png"
+        files.append(File(path, filename=f"wild{idx}_{pip}.png"))
 
-    # Total
-    embed.add_field(name='Modifier', value=str(res['modifier']), inline=True)
-    embed.add_field(name='Total', value=str(res['total']), inline=True)
-
-    await ctx.send(embed=embed)
+    # Send message with attachments inline
+    await ctx.send(header + footer, files=files)
 
 @bot.command(name='history', help='Show your last 10 ReUP rolls')
 async def history(ctx):
     user_hist = roll_history.get(ctx.author.id)
     if not user_hist:
         return await ctx.send(f"{ctx.author.display_name}, no roll history.")
+
     lines = []
     for e in user_hist:
         if e['critical_failure']:
@@ -148,10 +142,11 @@ async def history(ctx):
             continue
         std = f"Std: [{', '.join(map(str,e['std_rolls']))}]"
         wild = f"Wild: [{', '.join(map(str,e['wild_rolls']))}]"
-        extras = f"Expl:{e['explosions']}"
+        extras = f"Explosions: {e['explosions']}"
         if e['complication']:
             extras += ", Complication"
         lines.append(f"{std} {wild} → Total {e['total']} ({extras})")
+
     await ctx.send(f"{ctx.author.display_name}'s ReUP rolls:\n" + "\n".join(lines))
 
 if __name__ == '__main__':
@@ -160,6 +155,7 @@ if __name__ == '__main__':
         print("Error: DISCORD_TOKEN environment variable not set.")
         print("Ensure you have a .env file with DISCORD_TOKEN or set it in environment variables.")
     else:
+        # Start health-check server and run bot
         threading.Thread(target=run_health_server, daemon=True).start()
         bot.run(TOKEN)
 
