@@ -1,3 +1,6 @@
+Below is the complete **starwars\_weg\_dice\_bot.py** file. Copy-paste it **as-is** (no additional fences) into your GitHub repo, commit, and push:
+
+```python
 import os
 import base64
 import json
@@ -13,9 +16,9 @@ from PIL import Image
 # Load environment variables
 load_dotenv()
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
-GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")
-GITHUB_OWNER = os.getenv("GITHUB_OWNER")
-GITHUB_REPO = os.getenv("GITHUB_REPO")
+GITHUB_TOKEN  = os.getenv("GITHUB_TOKEN")
+GITHUB_OWNER  = os.getenv("GITHUB_OWNER")
+GITHUB_REPO   = os.getenv("GITHUB_REPO")
 
 if not all([DISCORD_TOKEN, GITHUB_TOKEN, GITHUB_OWNER, GITHUB_REPO]):
     print("Error: Missing one of DISCORD_TOKEN, GITHUB_TOKEN, GITHUB_OWNER, GITHUB_REPO")
@@ -25,7 +28,7 @@ if not all([DISCORD_TOKEN, GITHUB_TOKEN, GITHUB_OWNER, GITHUB_REPO]):
 API_URL_BASE = f"https://api.github.com/repos/{GITHUB_OWNER}/{GITHUB_REPO}/contents/character_sheets.json"
 HEADERS = {
     "Authorization": f"token {GITHUB_TOKEN}",
-    "Accept": "application/vnd.github.v3+json"
+    "Accept":        "application/vnd.github.v3+json"
 }
 
 def load_sheets():
@@ -54,14 +57,14 @@ character_sheets = load_sheets()
 # ReUP dice-rolling logic
 def roll_reup(pool, modifier):
     import random
-    # Standard dice (pool-1)
-    std_dice = [random.randint(1, 6) for _ in range(pool - 1)]
+    # Roll standard dice (pool-1)
+    std_dice = [random.randint(1, 6) for _ in range(max(pool - 1, 0))]
     # Wild die logic
     wild_rolls = []
     explosions = 0
     complication = False
 
-    # Initial wild
+    # Initial wild roll
     wild = random.randint(1, 6)
     wild_rolls.append(wild)
     if wild == 1:
@@ -80,8 +83,9 @@ def roll_reup(pool, modifier):
     total = sum(std_dice) + sum(wild_rolls) + modifier
     return std_dice, wild_rolls, modifier, explosions, complication, total
 
-# Health-check server for free-tier uptime
+# Health-check server for uptime
 app = Flask(__name__)
+
 @app.route("/")
 def health():
     return "OK", 200
@@ -108,16 +112,17 @@ async def roll_cmd(ctx, *args):
         await ctx.send("Usage: !roll <pool> [modifier] [image_url] [notes]")
         return
 
-    # 1️⃣ Parse pool
+    # Parse pool
     try:
         pool = int(args[0])
     except ValueError:
         await ctx.send("❌ Pool must be an integer.")
         return
 
-    # 2️⃣ Parse optional modifier
     modifier = 0
     idx = 1
+
+    # Optional modifier
     if idx < len(args):
         try:
             modifier = int(args[idx])
@@ -125,68 +130,69 @@ async def roll_cmd(ctx, *args):
         except ValueError:
             modifier = 0
 
-    # 3️⃣ Parse optional image URL
+    # Optional image URL
     url = None
     if idx < len(args) and args[idx].startswith(("http://", "https://")):
         url = args[idx]
         idx += 1
 
-    # 4️⃣ Parse optional notes
+    # Optional notes
     notes = None
     if idx < len(args):
         notes = " ".join(args[idx:])
         if (notes.startswith('"') and notes.endswith('"')) or (notes.startswith("'") and notes.endswith("'")):
             notes = notes[1:-1]
 
-    # 5️⃣ Perform the roll
+    # Perform the roll
     std_dice, wild_rolls, modifier, explosions, complication, total = roll_reup(pool, modifier)
 
-    # 6️⃣ Detect true Critical Failure: initial wild=1 → complication, then reroll wild=1
+    # Detect true Critical Failure (1→1 on wild)
     critical_failure = False
     if complication and len(wild_rolls) >= 2 and wild_rolls[1] == 1:
         critical_failure = True
 
-    # 7️⃣ Build the embed header
+    # Build embed header
     if critical_failure:
         embed = discord.Embed(title="🚨 Critical Failure on ReUP Roll!", color=0xFF0000)
     else:
         embed = discord.Embed(title=f"🎲 {ctx.author.display_name} rolled {pool}D6", color=0xFFD700)
 
-    # 8️⃣ Attach notes & thumbnail
+    # Attach notes & thumbnail
     if notes:
         embed.description = notes
     if url:
         embed.set_thumbnail(url=url)
 
-    # 9️⃣ Add fields
-embed.add_field(name="Standard Dice", value=", ".join(map(str, std_dice)) or "None", inline=False)
-embed.add_field(name="Wild Die",       value=", ".join(map(str, wild_rolls)),      inline=False)
+    # Add fields
+    embed.add_field(name="Standard Dice",    value=", ".join(map(str, std_dice)) or "None", inline=False)
+    embed.add_field(name="Wild Die",         value=", ".join(map(str, wild_rolls)),        inline=False)
+    embed.add_field(name="Modifier",         value=str(modifier),                           inline=True)
+    embed.add_field(name="Explosions",       value=str(explosions),                         inline=True)
+    embed.add_field(name="Complication",     value="Yes" if complication else "No",         inline=True)
+    embed.add_field(name="Total",            value=str(total),                              inline=False)
 
-# This trio will line up side-by-side
-embed.add_field(name="Modifier",       value=str(modifier),                         inline=True)
-embed.add_field(name="Explosions",     value=str(explosions),                       inline=True)
-embed.add_field(name="Complication",   value="Yes" if complication else "No",       inline=True)
-
-embed.add_field(name="Total",          value=str(total),                            inline=False)
-
-    #  🔟 Composite dice image (unchanged)
+    # Composite dice image
     images = []
     for pip in std_dice:
         images.append(Image.open(f"static/d6_std_{pip}.png"))
     for pip in wild_rolls:
         images.append(Image.open(f"static/d6_wild_{pip}.png"))
 
-    widths, heights = zip(*(i.size for i in images))
+    widths, heights = zip(*(im.size for im in images)) if images else ([0], [0])
     total_w = sum(widths)
-    combined = Image.new("RGBA", (total_w, heights[0]))
+    combined = Image.new("RGBA", (total_w, heights[0] if heights else 32))
     x_offset = 0
     for im in images:
         combined.paste(im, (x_offset, 0))
         x_offset += im.width
 
-    # Resize to 32px height using LANCZOS
-    scale = 32 / heights[0]
-    combined = combined.resize((int(total_w * scale), 32), Image.LANCZOS)
+    # Resize to 64px height using LANCZOS
+    target_h = 64
+    if heights:
+        scale = target_h / heights[0]
+    else:
+        scale = 1
+    combined = combined.resize((int(total_w * scale), target_h), Image.LANCZOS)
 
     # Send as attachment
     buf = io.BytesIO()
@@ -243,3 +249,4 @@ async def char_remove(ctx, name: str):
 if __name__ == "__main__":
     threading.Thread(target=run_health_server, daemon=True).start()
     bot.run(DISCORD_TOKEN)
+```
