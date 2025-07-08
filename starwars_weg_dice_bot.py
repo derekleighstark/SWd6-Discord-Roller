@@ -68,8 +68,7 @@ npc_store        = defaultdict(dict) # user_id -> {name: url}
 # Flask health-check server for Render
 app = Flask(__name__)
 @app.route('/')
-def health():
-    return 'OK', 200
+def health(): return 'OK', 200
 
 def run_health_server():
     port = int(os.getenv('PORT', 5000))
@@ -87,10 +86,8 @@ def roll_reup(pool: int, modifier: int = 0):
     explosions = 0
     complication = False
     critical_failure = False
-    # Roll standard dice (pool - 1)
     for _ in range(max(0, pool - 1)):
         std_rolls.append(random.randint(1, 6))
-    # Roll initial Wild Die
     initial = random.randint(1, 6)
     wild_rolls.append(initial)
     if initial == 1:
@@ -105,7 +102,6 @@ def roll_reup(pool: int, modifier: int = 0):
         current = new_wild
     else:
         current = initial
-    # Handle Wild explosions
     while current == 6:
         explosions += 1
         current = random.randint(1, 6)
@@ -115,7 +111,6 @@ def roll_reup(pool: int, modifier: int = 0):
 
 # Helper to compose and send roll embed
 async def compose_and_send(ctx, pool, modifier, thumb, std, wild, expl, comp, cf, total, prefix):
-    # Build composite image
     images = [Image.open(f"static/d6_std_{p}.png") for p in std] + [Image.open(f"static/d6_wild_{p}.png") for p in wild]
     widths, heights = zip(*(img.size for img in images))
     total_w, max_h = sum(widths), max(heights)
@@ -125,12 +120,9 @@ async def compose_and_send(ctx, pool, modifier, thumb, std, wild, expl, comp, cf
         combined.paste(img, (x_offset, 0))
         x_offset += img.width
     combined = combined.resize((int(total_w * 32 / max_h), 32), Image.LANCZOS)
-    buf = io.BytesIO()
-    combined.save(buf, 'PNG')
-    buf.seek(0)
+    buf = io.BytesIO(); combined.save(buf, 'PNG'); buf.seek(0)
 
-    embed = discord.Embed(title=f"{prefix} {pool}D6 {'+'+str(modifier) if modifier else ''}",
-                          color=discord.Color.gold())
+    embed = discord.Embed(title=f"{prefix} {pool}D6 {'+'+str(modifier) if modifier else ''}", color=discord.Color.gold())
     if thumb:
         embed.set_thumbnail(url=thumb)
     embed.add_field(name='Standard Dice', value=', '.join(map(str, std)) or 'None', inline=False)
@@ -140,13 +132,13 @@ async def compose_and_send(ctx, pool, modifier, thumb, std, wild, expl, comp, cf
     if comp:
         embed.add_field(name='Complication', value='Yes',                              inline=True)
     if cf:
-        embed.add_field(name='Critical Fail',value='Yes',                              inline=True)
+        embed.add_field(name='Critical Failure', value='Yes',                         inline=True)
     embed.add_field(name='Total',          value=str(total),                        inline=True)
     embed.set_image(url='attachment://dice.png')
 
     await ctx.send(embed=embed, file=File(buf, filename='dice.png'))
 
-# Roll command with TN support and direct/personal thumb
+# Roll command with TN support
 @bot.command(help='!roll <pool> [modifier] [tn=<target> or character>]')
 async def roll(ctx, pool: int, *args):
     modifier = 0
@@ -156,42 +148,37 @@ async def roll(ctx, pool: int, *args):
         if arg.isdigit():
             modifier = int(arg)
         elif arg.startswith('tn='):
-            try:
-                target = int(arg.split('=', 1)[1])
-            except ValueError:
-                pass
+            try: target = int(arg.split('=',1)[1])
+            except: pass
         else:
-            char_or_url = (char_or_url + ' ' + arg).strip() if char_or_url else arg
+            char_or_url = (char_or_url+' '+arg).strip() if char_or_url else arg
     thumb = None
     if char_or_url:
         uid = str(ctx.author.id)
         thumb = character_sheets.get(uid, {}).get(char_or_url, char_or_url)
 
     std, wild, expl, comp, cf, total = roll_reup(pool, modifier)
-    # Success roll
     if target:
-        successes = sum(1 for d in std + wild if d >= target)
-        return await ctx.send(f"✅ {ctx.author.display_name} achieved {successes} successes (TN={target})")
-
-    # Normal roll
+        succ = sum(1 for d in std+wild if d>=target)
+        return await ctx.send(f"✅ {ctx.author.display_name} got {succ} successes (TN={target})")
     await compose_and_send(ctx, pool, modifier, thumb, std, wild, expl, comp, cf, total, '🎲')
 
 # Private roll
 @bot.command(help='!privateroll <pool> [modifier] [character]')
 async def privateroll(ctx, pool: int, *args):
-    std, wild, expl, comp, cf, total = roll_reup(pool, int(args[0]) if args and args[0].isdigit() else 0)
+    mod = int(args[0]) if args and args[0].isdigit() else 0
+    std, wild, expl, comp, cf, total = roll_reup(pool, mod)
     dm = await ctx.author.create_dm()
-    await compose_and_send(dm, pool, 0, None, std, wild, expl, comp, cf, total, '🔒 Private Roll')
+    await compose_and_send(dm, pool, mod, None, std, wild, expl, comp, cf, total, '🔒 Private Roll')
 
 # Damage roll
 @bot.command(help='!damage <pool> <soak>')
 async def damage(ctx, pool: int, soak: int):
-    rolls = [random.randint(1, 6) for _ in range(pool)]
-    dmg = sum(rolls) - soak
+    rolls = [random.randint(1,6) for _ in range(pool)]
+    dmg = sum(rolls)-soak
     await ctx.send(f"💥 Damage Roll: {rolls} - Soak {soak} = {dmg}")
 
-# Initiative tracker
-@bot.group(help='Initiative: add, list, next')
+# Initiative tracker\@bot.group(help='Initiative: add, list, next')
 async def init(ctx):
     if ctx.invoked_subcommand is None:
         await ctx.send("Usage: !init add <name> <score> | list | next")
@@ -199,15 +186,15 @@ async def init(ctx):
 @init.command(name='add')
 async def init_add(ctx, name: str, score: int):
     initiative_order.append((name, score))
-    initiative_order.sort(key=lambda x: -x[1])
+    initiative_order.sort(key=lambda x:-x[1])
     await ctx.send(f"⚔️ Added {name} at {score}")
 
 @init.command(name='list')
 async def init_list(ctx):
     if not initiative_order:
         return await ctx.send("No initiative entries.")
-    order = '\n'.join(f"{n}: {s}" for n, s in initiative_order)
-    await ctx.send("🗡️ Initiative Order:\n" + order)
+    order = '\n'.join(f"{n}: {s}" for n,s in initiative_order)
+    await ctx.send("🗡️ Initiative Order:\n"+order)
 
 @init.command(name='next')
 async def init_next(ctx):
@@ -220,10 +207,7 @@ async def init_next(ctx):
 @bot.command(help='!remind <minutes> <message>')
 async def remind(ctx, minutes: int, *, msg: str):
     from automations import create
-    create({
-        'prompt': f"Tell me to {msg}",
-        'dtstart_offset_json': json.dumps({'minutes': minutes})
-    })
+    create({"prompt":f"Tell me to {msg}","dtstart_offset_json":json.dumps({'minutes':minutes})})
     await ctx.send(f"⏰ Reminder set in {minutes} minutes: {msg}")
 
 # Macros
@@ -239,26 +223,21 @@ async def macro_add(ctx, name: str, *, command: str):
 
 @macro.command(name='run')
 async def macro_run(ctx, name: str):
-    cmd = macros[str(ctx.author.id)].get(name)
-    if not cmd:
-        return await ctx.send("Macro not found.")
-    parts = cmd.split()
+    cmd=macros[str(ctx.author.id)].get(name)
+    if not cmd: return await ctx.send("Macro not found.")
+    parts=cmd.split()
     await ctx.invoke(bot.get_command(parts[0]), *parts[1:])
 
 @macro.command(name='list')
 async def macro_list(ctx):
-    m = macros[str(ctx.author.id)]
-    if not m:
-        return await ctx.send("No macros defined.")
-    await ctx.send("Macros:\n" + '\n'.join(m.keys()))
+    m=macros[str(ctx.author.id)]
+    if not m: return await ctx.send("No macros defined.")
+    await ctx.send("Macros:\n"+'\n'.join(m.keys()))
 
 @macro.command(name='remove')
 async def macro_remove(ctx, name: str):
-    if name in macros[str(ctx.author.id)]:
-        macros[str(ctx.author.id)].pop(name)
-        await ctx.send(f"🗑️ Macro '{name}' removed.")
-    else:
-        await ctx.send("Macro not found.")
+    if name in macros[str(ctx.author.id)]: macros[str(ctx.author.id)].pop(name); await ctx.send(f"🗑️ Macro '{name}' removed.")
+    else: await ctx.send("Macro not found.")
 
 # Character management
 @bot.group(help='Characters: add, show, list, remove')
@@ -268,109 +247,19 @@ async def char(ctx):
 
 @char.command(name='add')
 async def char_add(ctx, name: str, url: str):
-    uid = str(ctx.author.id)
-    character_sheets.setdefault(uid, {})
-    character_sheets[uid][name] = url
-    save_sheets(character_sheets, msg=f"Add {name} by {ctx.author.id}")
+    uid=str(ctx.author.id)
+    character_sheets.setdefault(uid,{})
+    character_sheets[uid][name]=url
+    save_sheets(character_sheets,msg=f"Add {name} by {ctx.author.id}")
     await ctx.send(f"✅ Character '{name}' registered.")
 
 @char.command(name='show')
 async def char_show(ctx, name: str):
-    uid = str(ctx.author.id)
-    url = character_sheets.get(uid, {}).get(name)
-    if not url:
-        return await ctx.send(f"❌ No character named '{name}'.")
-    embed = discord.Embed(title=name, color=discord.Color.blue())
-    embed.set_thumbnail(url=url)
-    await ctx.send(embed=embed)
+    uid=str(ctx.author.id)
+    url=character_sheets.get(uid,{}).get(name)
+    if not url: return await ctx.send(f"❌ No character named '{name}'.")
+    e=discord.Embed(title=name,color=discord.Color.blue());e.set_thumbnail(url=url)
+    await ctx.send(embed=e)
 
 @char.command(name='list')
 async def char_list(ctx):
-    uid = str(ctx.author.id)
-    names = character_sheets.get(uid, {}).keys()
-    if not names:
-        return await ctx.send("No characters registered.")
-    await ctx.send('📜 ' + ctx.author.display_name + "'s characters:
-" + '
-'.join(names))
-
-@char.command(name='remove')
-async def char_remove(ctx, name: str):
-    uid = str(ctx.author.id)
-    if name in character_sheets.get(uid, {}):
-        character_sheets[uid].pop(name)
-        save_sheets(character_sheets, msg=f"Remove {name} by {ctx.author.id}")
-        await ctx.send(f"🗑️ Character '{name}' removed.")
-    else:
-        await ctx.send(f"❌ No character named '{name}'.")
-
-# XP tracking
-@bot.group(help='XP: add, show')
-async def xp(ctx):
-    if ctx.invoked_subcommand is None:
-        await ctx.send("Usage: !xp add <amount> | show")
-
-@xp.command(name='add')
-async def xp_add(ctx, amount: int):
-    xp_store[str(ctx.author.id)] += amount
-    await ctx.send(f"🌟 Added {amount} XP. Total: {xp_store[str(ctx.author.id)]}")
-
-@xp.command(name='show')
-async def xp_show(ctx):
-    await ctx.send(f"🎖️ XP: {xp_store[str(ctx.author.id)]}")
-
-# NPC management
-@bot.group(help='NPCs: add, show, list, remove')
-async def npc(ctx):
-    if ctx.invoked_subcommand is None:
-        await ctx.send("Usage: !npc add <name> <url> | show <name> | list | remove <name>")
-
-@npc.command(name='add')
-async def npc_add(ctx, name: str, url: str):
-    npc_store[str(ctx.author.id)][name] = url
-    await ctx.send(f"🤖 NPC '{name}' added.")
-
-@npc.command(name='show')
-async def npc_show(ctx, name: str):
-    url = npc_store[str(ctx.author.id)].get(name)
-    if not url:
-        return await ctx.send("NPC not found.")
-    e = discord.Embed(title=name)
-    e.set_thumbnail(url=url)
-    await ctx.send(embed=e)
-
-@npc.command(name='list')
-async def npc_list(ctx):
-    keys = npc_store[str(ctx.author.id)].keys()
-    if not keys:
-        return await ctx.send("No NPCs.")
-    await ctx.send("NPCs:\n" + '\n'.join(keys))
-
-@npc.command(name='remove')
-async def npc_remove(ctx, name: str):
-    if name in npc_store[str(ctx.author.id)]:
-        npc_store[str(ctx.author.id)].pop(name)
-        await ctx.send(f"🗑️ NPC '{name}' removed.")
-    else:
-        await ctx.send("NPC not found.")
-
-# History
-@bot.command(help='Show last 10 rolls')
-async def history(ctx):
-    h = roll_history.get(str(ctx.author.id), [])
-    if not h:
-        return await ctx.send("No history.")
-    lines = []
-    for s, w, e, c, cf, t in h:
-        if cf:
-            lines.append("🚨 Critical Failure")
-            continue
-        extra = f"Expl:{e}{', Comp' if c else ''}"
-        lines.append(f"Std:{s} Wild:{w} → {t} ({extra})")
-    await ctx.send("\n".join(lines))
-
-if __name__ == '__main__':
-    threading.Thread(target=run_health_server, daemon=True).start()
-    bot.run(token)
-
-# NOTE: Enable Message Content Intent in your Discord Developer Portal settings
