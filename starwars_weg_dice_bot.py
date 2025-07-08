@@ -68,17 +68,15 @@ def roll_reup(pool: int, modifier: int = 0):
 async def on_ready():
     print(f"Logged in as {bot.user} (ID: {bot.user.id})")
 
-# Roll command with character lookup
-@bot.command(name='roll', help='Roll ReUP D6: !roll <pool> [modifier] [char_or_url]')
+# Roll command with character thumbnail lookup
+@bot.command(name='roll', help='Roll ReUP D6: !roll <pool> [modifier] [character_name_or_url]')
 async def roll(ctx, pool: int, modifier: int = 0, char_or_url: str = None):
-    # Determine thumbnail URL: if char name, lookup, else use URL directly
+    # Determine thumbnail: match registered name or treat as URL
     thumb_url = None
     if char_or_url:
-        uid = str(ctx.author.id)
-        user_chars = character_sheets.get(uid, {})
-        # if matches a registered character name
+        user_chars = character_sheets.get(str(ctx.author.id), {})
         if char_or_url in user_chars:
-            thumb_url = user_chars[char_or_url]['portrait']
+            thumb_url = user_chars[char_or_url]
         else:
             thumb_url = char_or_url
     # Perform roll
@@ -93,12 +91,10 @@ async def roll(ctx, pool: int, modifier: int = 0, char_or_url: str = None):
     widths, heights = zip(*(img.size for img in images))
     total_w, max_h = sum(widths), max(heights)
     combined = Image.new('RGBA', (total_w, max_h), (0,0,0,0))
-    x_offset = 0
+    x = 0
     for img in images:
-        combined.paste(img, (x_offset, 0))
-        x_offset += img.width
-    scale = 32 / max_h
-    combined = combined.resize((int(total_w * scale), 32), Image.LANCZOS)
+        combined.paste(img, (x, 0)); x += img.width
+    combined = combined.resize((int(total_w * 32 / max_h), 32), Image.LANCZOS)
     buf = io.BytesIO(); combined.save(buf, 'PNG'); buf.seek(0)
     # Build embed
     embed = discord.Embed(
@@ -117,52 +113,41 @@ async def roll(ctx, pool: int, modifier: int = 0, char_or_url: str = None):
     embed.set_image(url='attachment://dice.png')
     await ctx.send(embed=embed, file=File(buf, filename='dice.png'))
 
-# Character management: multiple characters per user
+# Character management: name and URL only
 @bot.command(name='char', help='Manage chars: add/show/list/remove')
-async def char(ctx, action: str=None, *args):
+async def char(ctx, action: str = None, name: str = None, url: str = None):
     uid = str(ctx.author.id)
-    if uid not in character_sheets:
-        character_sheets[uid] = {}
+    character_sheets.setdefault(uid, {})
     user_chars = character_sheets[uid]
-    if action == 'add' and len(args) >= 3:
-        name, url = args[0], args[1]
-        sheet_raw = ' '.join(args[2:])
-        fields = {}
-        for part in sheet_raw.split(';'):
-            if ':' in part:
-                k, v = part.split(':', 1)
-                fields[k.strip()] = v.strip()
-        user_chars[name] = {'portrait': url, 'fields': fields}
+    # Add: supports multi-word names with quotes
+    if action == 'add' and name and url:
+        user_chars[name] = url
         with open(DATA_FILE, 'w') as f:
             json.dump(character_sheets, f, indent=2)
-        return await ctx.send(f"✅ '{name}' added.")
-    if action == 'show' and len(args) == 1:
-        name = args[0]
-        char = user_chars.get(name)
-        if not char:
-            return await ctx.send(f"❌ '{name}' not found.")
+        return await ctx.send(f"✅ Character '{name}' registered.")
+    # Show
+    if action == 'show' and name:
+        portrait = user_chars.get(name)
+        if not portrait:
+            return await ctx.send(f"❌ No character named '{name}'.")
         embed = discord.Embed(title=name, color=discord.Color.blue())
-        embed.set_thumbnail(url=char['portrait'])
-        for k, v in char['fields'].items():
-            embed.add_field(name=k, value=v, inline=False)
+        embed.set_thumbnail(url=portrait)
         return await ctx.send(embed=embed)
+    # List
     if action == 'list':
         if not user_chars:
-            return await ctx.send("No characters.")
-        return await ctx.send(
-            '📜 ' + ctx.author.display_name + "'s characters:\n" + '\n'.join(user_chars.keys())
-        )
-    if action == 'remove' and len(args) == 1:
-        name = args[0]
+            return await ctx.send("No characters registered.")
+        return await ctx.send('📜 ' + ctx.author.display_name + "'s characters:\n" + '\n'.join(user_chars.keys()))
+    # Remove
+    if action == 'remove' and name:
         if name in user_chars:
             del user_chars[name]
             with open(DATA_FILE, 'w') as f:
                 json.dump(character_sheets, f, indent=2)
-            return await ctx.send(f"🗑️ '{name}' removed.")
-        return await ctx.send(f"❌ '{name}' not found.")
-    return await ctx.send(
-        "Usage: !char add <name> <portrait_url> <key:val;...> | show <name> | list | remove <name>"
-    )
+            return await ctx.send(f"🗑️ Character '{name}' removed.")
+        return await ctx.send(f"❌ No character named '{name}'.")
+    # Help fallback
+    return await ctx.send("Usage: !char add \"Name\" URL | show \"Name\" | list | remove \"Name\"")
 
 # History command
 @bot.command(name='history', help='Show last 10 rolls')
@@ -173,8 +158,7 @@ async def history(ctx):
     lines = []
     for std, wild, exp, comp, cf, total in h:
         if cf:
-            lines.append("🚨 Critical Failure")
-            continue
+            lines.append("🚨 Critical Failure"); continue
         extra = f"Expl:{exp}{', Comp' if comp else ''}"
         lines.append(f"Std:{std} Wild:{wild} → {total} ({extra})")
     await ctx.send("\n".join(lines))
