@@ -121,4 +121,27 @@ if __name__ == '__main__':
         print("Error: DISCORD_TOKEN environment variable not set.")
         print("Make sure you have a .env file or environment variable DISCORD_TOKEN defined.")
     else:
-        bot.run(TOKEN)
+import os
+import threading
+from flask import Flask
+
+# ——— HEALTH-CHECK SERVER ———
+app = Flask(__name__)
+
+@app.route('/')
+def health():
+    return 'OK', 200
+
+def run_health_server():
+    # Render sets PORT; default to 5000 locally
+    port = int(os.environ.get('PORT', 5000))
+    # Listen on all interfaces so Render’s router can reach it
+    app.run(host='0.0.0.0', port=port)
+
+# Start Flask in a background thread
+threading.Thread(target=run_health_server, daemon=True).start()
+
+# ——— END HEALTH-CHECK SERVER ———
+
+# ... then later you have:
+bot.run(TOKEN)
