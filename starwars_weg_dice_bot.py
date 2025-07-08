@@ -24,7 +24,9 @@ def run_health_server():
 # Star Wars WEG D6 Dice Roller Bot
 # Supports: 1st Edition (1e) and Revised & Updated (reup)
 
+# Configure intents: need message_content for prefix commands
 intents = discord.Intents.default()
+intents.message_content = True  # enable message content intent
 bot = commands.Bot(command_prefix='!', intents=intents)
 
 # History storage: user_id -> deque of last 10 roll dicts
@@ -128,3 +130,5 @@ if __name__ == '__main__':
         threading.Thread(target=run_health_server, daemon=True).start()
         # Run the Discord bot
         bot.run(TOKEN)
+
+# NOTE: Make sure 'Message Content Intent' is enabled in the Discord Developer Portal under Bot → Privileged Gateway Intents
