@@ -45,8 +45,8 @@ bot = commands.Bot(command_prefix='!', intents=intents)
 
 # In-memory storage
 roll_history = {}          # user_id -> deque of last 10 rolls
-# roll_reup function unchanged
 
+# ReUP roll function
 def roll_reup(pool: int, modifier: int = 0):
     std_rolls, wild_rolls = [], []
     explosions = 0
@@ -104,7 +104,7 @@ async def roll(ctx, pool: int, modifier: int = 0, character_image_url: str = Non
         x += img.width
     # resize height 32px
     scale = 32 / max_h
-    combined = combined.resize((int(total_w * scale), 32), Image.ANTIALIAS)
+    combined = combined.resize((int(total_w * scale), 32), Image.LANCZOS)
     buf = io.BytesIO()
     combined.save(buf, format='PNG')
     buf.seek(0)
