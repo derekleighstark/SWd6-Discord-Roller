@@ -1,32 +1,33 @@
-# ⚠️ Setup Instructions
-# 1. Create a file named ".env" in the project root.
-# 2. Inside .env, add:
-#    DISCORD_TOKEN=YOUR_BOT_TOKEN_HERE
-# 3. Make sure python-dotenv is installed (pip install python-dotenv).
-
 import os
 import random
 import discord
 from discord.ext import commands
 from collections import deque
-# Optional: Load environment variables from a .env file
+import threading
+from flask import Flask
 from dotenv import load_dotenv
 
-# Load .env if present
+# Load environment variables
 load_dotenv()
+
+# Health-check Flask server
+app = Flask(__name__)
+
+@app.route('/')
+def health():
+    return 'OK', 200
+
+def run_health_server():
+    port = int(os.environ.get('PORT', 5000))
+    app.run(host='0.0.0.0', port=port)
 
 # Star Wars WEG D6 Dice Roller Bot
 # Supports: 1st Edition (1e) and Revised & Updated (reup)
-# Features:
-# - 1e: pool of D6, sum only
-# - reup: pool-1 standard D6 + 1 wild die (explode on 6, 1 = complication)
-# - Modifiers, roll history (last 10 per user)
-# - Unified !roll command
 
 intents = discord.Intents.default()
 bot = commands.Bot(command_prefix='!', intents=intents)
 
-# History: user_id -> deque of last 10 roll dicts
+# History storage: user_id -> deque of last 10 roll dicts
 roll_history = {}
 
 # Edition-specific roll functions
@@ -37,13 +38,12 @@ def roll_1e(pool: int, modifier: int = 0):
 
 
 def roll_reup(pool: int, modifier: int = 0):
-    # reup behavior: pool includes wild die
     if pool < 1:
         return {"edition": "reup", "pool": pool, "modifier": modifier, "rolls": [], "total": modifier, "explosions": 0, "complication": False}
     rolls = []
     explosions = 0
     complication = False
-    # standard dice
+    # Standard dice
     for _ in range(pool - 1):
         r = random.randint(1, 6)
         rolls.append(r)
@@ -51,7 +51,7 @@ def roll_reup(pool: int, modifier: int = 0):
             explosions += 1
             r = random.randint(1, 6)
             rolls.append(r)
-    # wild die
+    # Wild die
     wild = random.randint(1, 6)
     rolls.append(wild)
     if wild == 1:
@@ -83,14 +83,17 @@ async def roll(ctx, *args):
     except (ValueError, IndexError):
         return await ctx.send("Usage: !roll [edition] <pool> [modifier]  (edition: 1e, reup)")
 
+    # Perform the roll
     if edition == '1e':
         result = roll_1e(pool, modifier)
     else:
         result = roll_reup(pool, modifier)
 
+    # Store in history
     user_hist = roll_history.setdefault(ctx.author.id, deque(maxlen=10))
     user_hist.append(result)
 
+    # Build and send response
     roll_str = ', '.join(str(r) for r in result['rolls'])
     desc = f"🎲 {ctx.author.display_name} rolled ({result['edition']}) {result['pool']}D6 {'+'+str(result['modifier']) if result['modifier'] else ''}: {roll_str}\n"
     if edition == 'reup':
@@ -121,27 +124,7 @@ if __name__ == '__main__':
         print("Error: DISCORD_TOKEN environment variable not set.")
         print("Make sure you have a .env file or environment variable DISCORD_TOKEN defined.")
     else:
-import os
-import threading
-from flask import Flask
-
-# ——— HEALTH-CHECK SERVER ———
-app = Flask(__name__)
-
-@app.route('/')
-def health():
-    return 'OK', 200
-
-def run_health_server():
-    # Render sets PORT; default to 5000 locally
-    port = int(os.environ.get('PORT', 5000))
-    # Listen on all interfaces so Render’s router can reach it
-    app.run(host='0.0.0.0', port=port)
-
-# Start Flask in a background thread
-threading.Thread(target=run_health_server, daemon=True).start()
-
-# ——— END HEALTH-CHECK SERVER ———
-
-# ... then later you have:
-bot.run(TOKEN)
+        # Start health-check server
+        threading.Thread(target=run_health_server, daemon=True).start()
+        # Run the Discord bot
+        bot.run(TOKEN)
