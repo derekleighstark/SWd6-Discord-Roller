@@ -95,15 +95,33 @@ def roll_reup(pool: int, modifier: int = 0):
     total = sum(std_rolls) + sum(wild_rolls) + modifier
     return std_rolls, wild_rolls, explosions, complication, total
 
-# Dice roll command with notes and embed suppression
+# Dice roll command with notes and flexible args
 @bot.command(name='roll')
-async def roll_command(ctx, pool: int, modifier: int = 0, image_url: str = None, *, notes: str = None):
-    # Suppress original URL unfurling rather than deleting message
+async def roll(ctx, *args):
+    # args: pool [modifier] [image_url] [notes...]
+    if not args:
+        return await ctx.send("Usage: !roll <pool> [modifier] [image_url] [notes]")
+    # parse pool
     try:
-        await ctx.message.suppress_embeds(True)
-    except Exception:
-        pass
-
+        pool = int(args[0])
+    except ValueError:
+        return await ctx.send("First argument must be pool size (integer).")
+    modifier = 0
+    image_url = None
+    notes = None
+    idx = 1
+    # parse optional modifier
+    if idx < len(args) and args[idx].lstrip('-').isdigit():
+        modifier = int(args[idx])
+        idx += 1
+    # parse optional image_url
+    if idx < len(args) and (args[idx].startswith('http://') or args[idx].startswith('https://')):
+        image_url = args[idx]
+        idx += 1
+    # remaining args = notes
+    if idx < len(args):
+        notes = ' '.join(args[idx:])
+    # perform roll
     std, wild, explosions, complication, total = roll_reup(pool, modifier)
     # Build composite image
     images = [Image.open(f"static/d6_std_{d}.png") for d in std] + \
@@ -119,7 +137,7 @@ async def roll_command(ctx, pool: int, modifier: int = 0, image_url: str = None,
     buf = io.BytesIO()
     combined.save(buf, 'PNG')
     buf.seek(0)
-
+    # Build embed
     embed = discord.Embed(
         title=f"🎲 {ctx.author.display_name} rolled {pool}D6 {'+'+str(modifier) if modifier else ''}",
         description=notes or discord.Embed.Empty,
