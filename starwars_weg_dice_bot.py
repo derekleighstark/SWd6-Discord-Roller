@@ -178,7 +178,7 @@ async def char(ctx):
 @char.command(name='add')
 async def char_add(ctx, name: str, url: str):
     uid = str(ctx.author.id)
-    character_sheets.setdefault(uid, {})\[name\] = url
+    character_sheets.setdefault(uid, {})[name] = url
     save_sheets(character_sheets, msg=f"Add {name}")
     await ctx.send(f"✅ Character '{name}' added.")
 
