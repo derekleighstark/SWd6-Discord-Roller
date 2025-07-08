@@ -120,7 +120,12 @@ async def roll(ctx, *args):
         idx += 1
     # remaining args = notes
     if idx < len(args):
-        notes = ' '.join(args[idx:])
+        raw_notes = ' '.join(args[idx:])
+        # strip wrapping quotes if present
+        if len(raw_notes) >= 2 and raw_notes[0] == raw_notes[-1] and raw_notes[0] in ('"', "'"):
+            notes = raw_notes[1:-1]
+        else:
+            notes = raw_notes
     # perform roll
     std, wild, explosions, complication, total = roll_reup(pool, modifier)
     # Build composite image
