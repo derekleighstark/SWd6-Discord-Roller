@@ -260,6 +260,50 @@ async def macro_remove(ctx, name: str):
     else:
         await ctx.send("Macro not found.")
 
+# Character management
+@bot.group(help='Characters: add, show, list, remove')
+async def char(ctx):
+    if ctx.invoked_subcommand is None:
+        await ctx.send("Usage: !char add \"Name\" URL | show \"Name\" | list | remove \"Name\"")
+
+@char.command(name='add')
+async def char_add(ctx, name: str, url: str):
+    uid = str(ctx.author.id)
+    character_sheets.setdefault(uid, {})
+    character_sheets[uid][name] = url
+    save_sheets(character_sheets, msg=f"Add {name} by {ctx.author.id}")
+    await ctx.send(f"✅ Character '{name}' registered.")
+
+@char.command(name='show')
+async def char_show(ctx, name: str):
+    uid = str(ctx.author.id)
+    url = character_sheets.get(uid, {}).get(name)
+    if not url:
+        return await ctx.send(f"❌ No character named '{name}'.")
+    embed = discord.Embed(title=name, color=discord.Color.blue())
+    embed.set_thumbnail(url=url)
+    await ctx.send(embed=embed)
+
+@char.command(name='list')
+async def char_list(ctx):
+    uid = str(ctx.author.id)
+    names = character_sheets.get(uid, {}).keys()
+    if not names:
+        return await ctx.send("No characters registered.")
+    await ctx.send('📜 ' + ctx.author.display_name + "'s characters:
+" + '
+'.join(names))
+
+@char.command(name='remove')
+async def char_remove(ctx, name: str):
+    uid = str(ctx.author.id)
+    if name in character_sheets.get(uid, {}):
+        character_sheets[uid].pop(name)
+        save_sheets(character_sheets, msg=f"Remove {name} by {ctx.author.id}")
+        await ctx.send(f"🗑️ Character '{name}' removed.")
+    else:
+        await ctx.send(f"❌ No character named '{name}'.")
+
 # XP tracking
 @bot.group(help='XP: add, show')
 async def xp(ctx):
