@@ -109,7 +109,7 @@ async def history(ctx):
     await ctx.send(f"{ctx.author.display_name}'s rolls:\n" + "\n".join(lines))
 
 if __name__ == '__main__':
-    TOKEN = os.getenv('DISCORD_TOKEN')
+    TOKEN = os.getenv('655f674042c8295dd8b33b779bb73ab27bbe1c41a5b6cd17d5a7d1681d16bfe0')
     if not TOKEN:
         print("Error: DISCORD_TOKEN environment variable not set.")
     else:
