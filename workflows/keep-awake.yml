@@ -11,4 +11,4 @@ jobs:
     steps:
       - name: Ping Render health endpoint
         run: |
-          curl --fail https://<your-service>.onrender.com/ || exit 1
+          curl --fail https://swd6-discord-roller.onrender.com/ || exit 1
