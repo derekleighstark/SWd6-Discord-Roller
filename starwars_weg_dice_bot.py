@@ -40,6 +40,7 @@ def load_sheets():
     content = data.get('content', '')
     return json.loads(base64.b64decode(content))
 
+
 def save_sheets(sheets, msg='Update character sheets'):
     r = requests.get(API_URL_BASE, headers=HEADERS)
     sha = r.json().get('sha') if r.status_code == 200 else None
@@ -126,9 +127,9 @@ async def roll_command(ctx, pool: int, modifier: int = 0, image_url: str = None)
         embed.set_thumbnail(url=image_url)
     embed.add_field(name='Standard Dice', value=', '.join(map(str, std)) or 'None', inline=False)
     embed.add_field(name='Wild Die',       value=', '.join(map(str, wild)),           inline=False)
-    embed.add_field(name='Explosions',     value=str(explosions),                     inline=True)
-    if complication:
-        embed.add_field(name='Complication', value='Yes',                               inline=True)
+    embed.add_field(name='Modifier',       value=str(modifier),                     inline=True)
+    embed.add_field(name='Explosions',     value=str(explosions),                   inline=True)
+    embed.add_field(name='Complication',   value='Yes' if complication else 'No',    inline=True)
     embed.add_field(name='Total',          value=str(total),                         inline=True)
     embed.set_image(url='attachment://dice.png')
     await ctx.send(embed=embed, file=File(buf, 'dice.png'))
