@@ -1,9 +1,7 @@
 import os
-import base64
-import json
 import threading
 import io
-import requests
+import random
 from dotenv import load_dotenv
 from flask import Flask
 import discord
@@ -13,52 +11,13 @@ from PIL import Image
 # Load environment variables
 load_dotenv()
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
-GITHUB_TOKEN  = os.getenv("GITHUB_TOKEN")
-GITHUB_OWNER  = os.getenv("GITHUB_OWNER")
-GITHUB_REPO   = os.getenv("GITHUB_REPO")
-
-if not all([DISCORD_TOKEN, GITHUB_TOKEN, GITHUB_OWNER, GITHUB_REPO]):
-    print("Error: Missing one of DISCORD_TOKEN, GITHUB_TOKEN, GITHUB_OWNER, GITHUB_REPO")
+if not DISCORD_TOKEN:
+    print("Error: Missing DISCORD_TOKEN")
     exit(1)
-
-# GitHub-backed persistence for character sheets
-API_URL_BASE = (
-    f"https://api.github.com/repos/{GITHUB_OWNER}/{GITHUB_REPO}"
-    "/contents/character_sheets.json"
-)
-HEADERS = {
-    "Authorization": f"token {GITHUB_TOKEN}",
-    "Accept":        "application/vnd.github.v3+json"
-}
-
-def load_sheets():
-    resp = requests.get(API_URL_BASE, headers=HEADERS)
-    if resp.status_code == 404:
-        return {}
-    resp.raise_for_status()
-    data = resp.json()
-    content = base64.b64decode(data["content"])
-    return json.loads(content)
-
-def save_sheets(sheets):
-    resp = requests.get(API_URL_BASE, headers=HEADERS)
-    if resp.status_code not in (200, 404):
-        resp.raise_for_status()
-    sha = resp.json().get("sha") if resp.status_code == 200 else None
-    encoded = base64.b64encode(json.dumps(sheets, indent=2).encode()).decode()
-    payload = {"message": "Update character sheets", "content": encoded}
-    if sha:
-        payload["sha"] = sha
-    put = requests.put(API_URL_BASE, headers=HEADERS, json=payload)
-    put.raise_for_status()
-
-character_sheets = load_sheets()
 
 # ReUP dice-rolling logic (official: no reroll on 1)
 def roll_reup(pool, modifier):
-    import random
-
-    # Standard dice: pool-1
+    # Standard dice (pool-1)
     std_dice = [random.randint(1, 6) for _ in range(max(pool - 1, 0))]
 
     # Roll the Wild Die exactly once
@@ -135,14 +94,12 @@ async def roll_cmd(ctx, *args):
     notes = None
     if idx < len(args):
         notes = " ".join(args[idx:])
-        if (notes.startswith('"') and notes.endswith('"')) or (notes.startswith("'") and notes.endswith("'")):
+        if (notes.startswith('"') and notes.endswith('"')) or \
+           (notes.startswith("'") and notes.endswith("'")):
             notes = notes[1:-1]
 
     # Perform the roll
     std_dice, wild_rolls, modifier, explosions, complication, total = roll_reup(pool, modifier)
-
-    # Determine display_wild (same as wild_rolls here)
-    display_wild = wild_rolls
 
     # Detect true Critical Failure (1→1 on wild)
     critical_failure = False
@@ -151,9 +108,15 @@ async def roll_cmd(ctx, *args):
 
     # Build embed header
     if critical_failure:
-        embed = discord.Embed(title="🚨 Critical Failure on ReUP Roll!", color=0xFF0000)
+        embed = discord.Embed(
+            title="🚨 Critical Failure on ReUP Roll!",
+            color=0xFF0000
+        )
     else:
-        embed = discord.Embed(title=f"🎲 {ctx.author.display_name} rolled {pool}D6", color=0xFFD700)
+        embed = discord.Embed(
+            title=f"🎲 {ctx.author.display_name} rolled {pool}D6",
+            color=0xFFD700
+        )
 
     # Attach notes & thumbnail
     if notes:
@@ -163,7 +126,7 @@ async def roll_cmd(ctx, *args):
 
     # Add fields
     embed.add_field(name="Standard Dice",  value=", ".join(map(str, std_dice)) or "None", inline=True)
-    embed.add_field(name="Wild Die",       value=", ".join(map(str, display_wild)), inline=True)
+    embed.add_field(name="Wild Die",       value=", ".join(map(str, wild_rolls)),       inline=True)
     embed.add_field(name="Modifier",       value=str(modifier),                          inline=True)
     embed.add_field(name="Explosions",     value=str(explosions),                        inline=True)
     embed.add_field(name="Complication",   value="Yes" if complication else "No",        inline=True)
@@ -186,7 +149,7 @@ async def roll_cmd(ctx, *args):
     images = []
     for pip in std_dice:
         images.append(Image.open(f"static/d6_std_{pip}.png"))
-    for pip in display_wild:
+    for pip in wild_rolls:
         images.append(Image.open(f"static/d6_wild_{pip}.png"))
 
     widths, heights = zip(*(im.size for im in images)) if images else ([0], [0])
@@ -210,48 +173,6 @@ async def roll_cmd(ctx, *args):
     embed.set_image(url="attachment://dice.png")
 
     await ctx.send(embed=embed, file=file)
-
-# Character management commands
-@bot.group(name="char", invoke_without_command=True)
-async def char_group(ctx):
-    await ctx.send("Use `!char add <Name> <URL>`, `!char show <Name>`, `!char list`, or `!char remove <Name>`")
-
-@char_group.command(name="add")
-async def char_add(ctx, name: str, url: str):
-    uid = str(ctx.author.id)
-    character_sheets.setdefault(uid, {})[name] = url
-    save_sheets(character_sheets)
-    await ctx.send(f"✅ Added character **{name}**.")
-
-@char_group.command(name="show")
-async def char_show(ctx, name: str):
-    uid = str(ctx.author.id)
-    url = character_sheets.get(uid, {}).get(name)
-    if not url:
-        await ctx.send(f"No such character **{name}**.")
-        return
-    embed = discord.Embed(title=name, color=0x00FF00)
-    embed.set_thumbnail(url=url)
-    await ctx.send(embed=embed)
-
-@char_group.command(name="list")
-async def char_list(ctx):
-    uid = str(ctx.author.id)
-    names = list(character_sheets.get(uid, {}).keys())
-    if not names:
-        await ctx.send("No characters registered.")
-        return
-    await ctx.send(f"📜 {ctx.author.display_name}'s characters:\n" + "\n".join(names))
-
-@char_group.command(name="remove")
-async def char_remove(ctx, name: str):
-    uid = str(ctx.author.id)
-    if name in character_sheets.get(uid, {}):
-        del character_sheets[uid][name]
-        save_sheets(character_sheets)
-        await ctx.send(f"🗑️ Removed character **{name}**.")
-    else:
-        await ctx.send(f"No such character **{name}**.")
 
 # Run health server & bot
 if __name__ == "__main__":
