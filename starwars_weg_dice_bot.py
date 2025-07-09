@@ -154,13 +154,17 @@ async def roll_cmd(ctx, *args):
     if complication and len(wild_rolls) >= 2 and wild_rolls[1] == 1:
         critical_failure = True
 
-    # Build embed header
+        # 7️⃣ Build embed header
     if critical_failure:
         embed = discord.Embed(title="🚨 Critical Failure on ReUP Roll!", color=0xFF0000)
     else:
         embed = discord.Embed(title=f"🎲 {ctx.author.display_name} rolled {pool}D6", color=0xFFD700)
 
-    # Attach notes & thumbnail
+    # ➕ Insert this right here to add a field:
+    if critical_failure:
+        embed.add_field(name="Critical Failure", value="Yes", inline=False)
+
+    # 8️⃣ Attach notes & thumbnail
     if notes:
         embed.description = notes
     if url:
