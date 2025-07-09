@@ -97,7 +97,7 @@ intents.message_content = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 
 # Roll command
-@bot.command(name="roll")
+@bot.command(name="swroll")
 async def roll_cmd(ctx, *args):
     # Suppress Discord's auto-preview on the trigger message
     try:
@@ -106,7 +106,7 @@ async def roll_cmd(ctx, *args):
         pass
 
     if not args:
-        await ctx.send("Usage: !roll <pool> [modifier] [image_url] [notes]")
+        await ctx.send("Usage: !swroll <pool> [modifier] [image_url] [notes]")
         return
 
     # Parse pool
