@@ -143,6 +143,12 @@ async def roll_cmd(ctx, *args):
     # Perform the roll
     std_dice, wild_rolls, modifier, explosions, complication, total = roll_reup(pool, modifier)
 
+    # ── NEW: only show the final wild die if the first was a 1 ──
+    display_wild = wild_rolls
+    if complication and wild_rolls and wild_rolls[0] == 1 and len(wild_rolls) > 1:
+        display_wild = wild_rolls[1:]
+    # ───────────────────────────────────────────────────────────
+
     # Detect true Critical Failure (1→1 on wild)
     critical_failure = False
     if complication and len(wild_rolls) >= 2 and wild_rolls[1] == 1:
@@ -160,19 +166,20 @@ async def roll_cmd(ctx, *args):
     if url:
         embed.set_thumbnail(url=url)
 
-    # Add fields
-    embed.add_field(name="Standard Dice",    value=", ".join(map(str, std_dice)) or "None", inline=True)
-    embed.add_field(name="Wild Die",         value=", ".join(map(str, wild_rolls)),        inline=True)
-    embed.add_field(name="Modifier",         value=str(modifier),                           inline=True)
-    embed.add_field(name="Explosions",       value=str(explosions),                         inline=True)
-    embed.add_field(name="Complication",     value="Yes" if complication else "No",         inline=True)
-    embed.add_field(name="Total",            value=str(total),                              inline=True)
+    # Add fields (use display_wild instead of wild_rolls)
+    embed.add_field(name="Standard Dice",  value=", ".join(map(str, std_dice)) or "None", inline=True)
+    embed.add_field(name="Wild Die",       value=", ".join(map(str, display_wild)),       inline=True)
+    embed.add_field(name="Modifier",       value=str(modifier),                            inline=True)
+    embed.add_field(name="Explosions",     value=str(explosions),                          inline=True)
+    embed.add_field(name="Complication",   value="Yes" if complication else "No",          inline=True)
+    embed.add_field(name="Total",          value=str(total),                               inline=True)
 
     # Composite dice image
     images = []
     for pip in std_dice:
         images.append(Image.open(f"static/d6_std_{pip}.png"))
-    for pip in wild_rolls:
+    # use display_wild here, not the full wild_rolls
+    for pip in display_wild:
         images.append(Image.open(f"static/d6_wild_{pip}.png"))
 
     widths, heights = zip(*(im.size for im in images)) if images else ([0], [0])
@@ -185,7 +192,7 @@ async def roll_cmd(ctx, *args):
 
     # Resize to 64px height using LANCZOS
     target_h = 64
-    if heights:
+    if heights and heights[0]:
         scale = target_h / heights[0]
     else:
         scale = 1
