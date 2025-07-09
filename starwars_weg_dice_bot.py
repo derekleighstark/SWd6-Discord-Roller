@@ -22,7 +22,10 @@ if not all([DISCORD_TOKEN, GITHUB_TOKEN, GITHUB_OWNER, GITHUB_REPO]):
     exit(1)
 
 # GitHub-backed persistence for character sheets
-API_URL_BASE = f"https://api.github.com/repos/{GITHUB_OWNER}/{GITHUB_REPO}/contents/character_sheets.json"
+API_URL_BASE = (
+    f"https://api.github.com/repos/{GITHUB_OWNER}/{GITHUB_REPO}"
+    "/contents/character_sheets.json"
+)
 HEADERS = {
     "Authorization": f"token {GITHUB_TOKEN}",
     "Accept":        "application/vnd.github.v3+json"
@@ -51,31 +54,26 @@ def save_sheets(sheets):
 
 character_sheets = load_sheets()
 
-# ReUP dice-rolling logic
+# ReUP dice-rolling logic (official: no reroll on 1)
 def roll_reup(pool, modifier):
     import random
-    # Roll standard dice (pool-1)
-    std_dice = [random.randint(1, 6) for _ in range(max(pool - 1, 0))]
-    # Wild die logic
-    wild_rolls = []
-    explosions = 0
-    complication = False
 
-    # Initial wild roll
+    # Standard dice: pool-1
+    std_dice = [random.randint(1, 6) for _ in range(max(pool - 1, 0))]
+
+    # Roll the Wild Die exactly once
     wild = random.randint(1, 6)
-    wild_rolls.append(wild)
-    if wild == 1:
-        complication = True
-        if std_dice:
-            std_dice.remove(max(std_dice))
-        wild = random.randint(1, 6)
-        wild_rolls.append(wild)
+    wild_rolls = [wild]
+    explosions = 0
 
     # Explode on 6
     while wild == 6:
         explosions += 1
         wild = random.randint(1, 6)
         wild_rolls.append(wild)
+
+    # Complication if initial wild was 1
+    complication = (wild_rolls[0] == 1)
 
     total = sum(std_dice) + sum(wild_rolls) + modifier
     return std_dice, wild_rolls, modifier, explosions, complication, total
@@ -99,7 +97,7 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 # Roll command
 @bot.command(name="swroll")
 async def roll_cmd(ctx, *args):
-    # Suppress Discord's auto-preview on the trigger message
+    # Suppress URL preview
     try:
         await ctx.message.edit(suppress=True)
     except discord.Forbidden:
@@ -143,46 +141,51 @@ async def roll_cmd(ctx, *args):
     # Perform the roll
     std_dice, wild_rolls, modifier, explosions, complication, total = roll_reup(pool, modifier)
 
-    # ── NEW: only show the final wild die if the first was a 1 ──
+    # Determine display_wild (same as wild_rolls here)
     display_wild = wild_rolls
-    if complication and wild_rolls and wild_rolls[0] == 1 and len(wild_rolls) > 1:
-        display_wild = wild_rolls[1:]
-    # ───────────────────────────────────────────────────────────
 
     # Detect true Critical Failure (1→1 on wild)
     critical_failure = False
     if complication and len(wild_rolls) >= 2 and wild_rolls[1] == 1:
         critical_failure = True
 
-        # 7️⃣ Build embed header
+    # Build embed header
     if critical_failure:
         embed = discord.Embed(title="🚨 Critical Failure on ReUP Roll!", color=0xFF0000)
     else:
         embed = discord.Embed(title=f"🎲 {ctx.author.display_name} rolled {pool}D6", color=0xFFD700)
 
-    # ➕ Insert this right here to add a field:
-    if critical_failure:
-        embed.add_field(name="Critical Failure", value="Yes", inline=False)
-
-    # 8️⃣ Attach notes & thumbnail
+    # Attach notes & thumbnail
     if notes:
         embed.description = notes
     if url:
         embed.set_thumbnail(url=url)
 
-    # Add fields (use display_wild instead of wild_rolls)
+    # Add fields
     embed.add_field(name="Standard Dice",  value=", ".join(map(str, std_dice)) or "None", inline=True)
-    embed.add_field(name="Wild Die",       value=", ".join(map(str, display_wild)),       inline=True)
-    embed.add_field(name="Modifier",       value=str(modifier),                            inline=True)
-    embed.add_field(name="Explosions",     value=str(explosions),                          inline=True)
-    embed.add_field(name="Complication",   value="Yes" if complication else "No",          inline=True)
-    embed.add_field(name="Total",          value=str(total),                               inline=True)
+    embed.add_field(name="Wild Die",       value=", ".join(map(str, display_wild)), inline=True)
+    embed.add_field(name="Modifier",       value=str(modifier),                          inline=True)
+    embed.add_field(name="Explosions",     value=str(explosions),                        inline=True)
+    embed.add_field(name="Complication",   value="Yes" if complication else "No",        inline=True)
+    embed.add_field(name="Total",          value=str(total),                             inline=False)
+
+    # GM option reminder if complication
+    if complication:
+        embed.add_field(
+            name="GM Option",
+            value=(
+                "Wild d6=1 → GM may:\n"
+                "1) add normally\n"
+                "2) subtract this & highest die\n"
+                "3) add normally & introduce complication"
+            ),
+            inline=False
+        )
 
     # Composite dice image
     images = []
     for pip in std_dice:
         images.append(Image.open(f"static/d6_std_{pip}.png"))
-    # use display_wild here, not the full wild_rolls
     for pip in display_wild:
         images.append(Image.open(f"static/d6_wild_{pip}.png"))
 
@@ -194,12 +197,9 @@ async def roll_cmd(ctx, *args):
         combined.paste(im, (x_offset, 0))
         x_offset += im.width
 
-    # Resize to 64px height using LANCZOS
+    # Resize to 64px height
     target_h = 64
-    if heights and heights[0]:
-        scale = target_h / heights[0]
-    else:
-        scale = 1
+    scale = (target_h / heights[0]) if heights and heights[0] else 1
     combined = combined.resize((int(total_w * scale), target_h), Image.LANCZOS)
 
     # Send as attachment
