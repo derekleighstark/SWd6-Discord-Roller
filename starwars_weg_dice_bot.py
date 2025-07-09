@@ -1,6 +1,3 @@
-Below is the complete **starwars\_weg\_dice\_bot.py** file. Copy-paste it **as-is** (no additional fences) into your GitHub repo, commit, and push:
-
-```python
 import os
 import base64
 import json
@@ -249,4 +246,3 @@ async def char_remove(ctx, name: str):
 if __name__ == "__main__":
     threading.Thread(target=run_health_server, daemon=True).start()
     bot.run(DISCORD_TOKEN)
-```
