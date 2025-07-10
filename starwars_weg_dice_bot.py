@@ -2,6 +2,7 @@ import os
 import threading
 import io
 import random
+import re  # NEW: regex for !swdice parsing
 from dotenv import load_dotenv
 from flask import Flask
 import discord
@@ -15,12 +16,14 @@ if not DISCORD_TOKEN:
     print("Error: Missing DISCORD_TOKEN")
     exit(1)
 
-# ReUP dice-rolling logic (official: no reroll on 1)
-def roll_reup(pool, modifier):
-    # Standard dice (pool-1)
+# ────────────────────────────────────────────────────────────────
+# ReUP dice‑rolling logic (official: no reroll on 1)
+# ────────────────────────────────────────────────────────────────
+
+def roll_reup(pool: int, modifier: int):
+    """Return detailed results for a ReUP roll."""
     std_dice = [random.randint(1, 6) for _ in range(max(pool - 1, 0))]
 
-    # Roll the Wild Die exactly once
     wild = random.randint(1, 6)
     wild_rolls = [wild]
     explosions = 0
@@ -31,32 +34,42 @@ def roll_reup(pool, modifier):
         wild = random.randint(1, 6)
         wild_rolls.append(wild)
 
-    # Complication if initial wild was 1
     complication = (wild_rolls[0] == 1)
-
     total = sum(std_dice) + sum(wild_rolls) + modifier
+
     return std_dice, wild_rolls, modifier, explosions, complication, total
 
-# Health-check server for uptime
+
+# ────────────────────────────────────────────────────────────────
+# Health‑check server for uptime‑services like Replit / Fly.io
+# ────────────────────────────────────────────────────────────────
 app = Flask(__name__)
+
 
 @app.route("/")
 def health():
     return "OK", 200
 
+
 def run_health_server():
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
 
+
+# ────────────────────────────────────────────────────────────────
 # Discord bot setup
+# ────────────────────────────────────────────────────────────────
 intents = discord.Intents.default()
 intents.message_content = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 
-# Roll command
+
+# ────────────────────────────────────────────────────────────────
+# !swroll – ReUP Wild‑Die mechanic
+# ────────────────────────────────────────────────────────────────
 @bot.command(name="swroll")
 async def roll_cmd(ctx, *args):
-    # Suppress URL preview
+    # Suppress URL preview from the original message
     try:
         await ctx.message.edit(suppress=True)
     except discord.Forbidden:
@@ -66,7 +79,6 @@ async def roll_cmd(ctx, *args):
         await ctx.send("Usage: !swroll <pool> [modifier] [image_url] [notes]")
         return
 
-    # Parse pool
     try:
         pool = int(args[0])
     except ValueError:
@@ -108,15 +120,9 @@ async def roll_cmd(ctx, *args):
 
     # Build embed header
     if critical_failure:
-        embed = discord.Embed(
-            title="🚨 Critical Failure on ReUP Roll!",
-            color=0xFF0000
-        )
+        embed = discord.Embed(title="🚨 Critical Failure on ReUP Roll!", color=0xFF0000)
     else:
-        embed = discord.Embed(
-            title=f"🎲 {ctx.author.display_name} rolled {pool}D6",
-            color=0xFFD700
-        )
+        embed = discord.Embed(title=f"🎲 {ctx.author.display_name} rolled {pool}D6", color=0xFFD700)
 
     # Attach notes & thumbnail
     if notes:
@@ -125,12 +131,12 @@ async def roll_cmd(ctx, *args):
         embed.set_thumbnail(url=url)
 
     # Add fields
-    embed.add_field(name="Standard Dice",  value=", ".join(map(str, std_dice)) or "None", inline=True)
-    embed.add_field(name="Wild Die",       value=", ".join(map(str, wild_rolls)),       inline=True)
-    embed.add_field(name="Modifier",       value=str(modifier),                          inline=True)
-    embed.add_field(name="Explosions",     value=str(explosions),                        inline=True)
-    embed.add_field(name="Complication",   value="Yes" if complication else "No",        inline=True)
-    embed.add_field(name="Total",          value=str(total),                             inline=False)
+    embed.add_field(name="Standard Dice", value=", ".join(map(str, std_dice)) or "None", inline=True)
+    embed.add_field(name="Wild Die",      value=", ".join(map(str, wild_rolls)),       inline=True)
+    embed.add_field(name="Modifier",      value=str(modifier),                          inline=True)
+    embed.add_field(name="Explosions",    value=str(explosions),                        inline=True)
+    embed.add_field(name="Complication",  value="Yes" if complication else "No",        inline=True)
+    embed.add_field(name="Total",         value=str(total),                             inline=False)
 
     # GM option reminder if complication
     if complication:
@@ -145,36 +151,86 @@ async def roll_cmd(ctx, *args):
             inline=False
         )
 
-    # Composite dice image
+    # Composite dice image for flair ---------------------------
     images = []
     for pip in std_dice:
         images.append(Image.open(f"static/d6_std_{pip}.png"))
     for pip in wild_rolls:
         images.append(Image.open(f"static/d6_wild_{pip}.png"))
 
-    widths, heights = zip(*(im.size for im in images)) if images else ([0], [0])
-    total_w = sum(widths)
-    combined = Image.new("RGBA", (total_w, heights[0] if heights else 32))
-    x_offset = 0
-    for im in images:
-        combined.paste(im, (x_offset, 0))
-        x_offset += im.width
+    if images:
+        widths, heights = zip(*(im.size for im in images))
+        total_w = sum(widths)
+        combined = Image.new("RGBA", (total_w, heights[0]))
+        x_offset = 0
+        for im in images:
+            combined.paste(im, (x_offset, 0))
+            x_offset += im.width
 
-    # Resize to 64px height
-    target_h = 64
-    scale = (target_h / heights[0]) if heights and heights[0] else 1
-    combined = combined.resize((int(total_w * scale), target_h), Image.LANCZOS)
+        # Resize to 64 px height
+        target_h = 64
+        scale = target_h / heights[0]
+        combined = combined.resize((int(total_w * scale), target_h), Image.LANCZOS)
 
-    # Send as attachment
-    buf = io.BytesIO()
-    combined.save(buf, format="PNG")
-    buf.seek(0)
-    file = discord.File(buf, filename="dice.png")
-    embed.set_image(url="attachment://dice.png")
+        buf = io.BytesIO()
+        combined.save(buf, format="PNG")
+        buf.seek(0)
+        file = discord.File(buf, filename="dice.png")
+        embed.set_image(url="attachment://dice.png")
+        await ctx.send(embed=embed, file=file)
+    else:
+        await ctx.send(embed=embed)
 
-    await ctx.send(embed=embed, file=file)
 
-# Run health server & bot
+# ────────────────────────────────────────────────────────────────
+# !swdice – generic polyhedral roller (XdY ± Z)
+# ────────────────────────────────────────────────────────────────
+@bot.command(name="swdice", aliases=["swd"])
+async def dice_cmd(ctx, *, expr: str | None = None):
+    """Roll standard polyhedral dice. Examples:
+    !swdice 3d6
+    !swdice 2d20+4
+    !swdice 1d10-1"""
+
+    try:
+        await ctx.message.edit(suppress=True)
+    except discord.Forbidden:
+        pass
+
+    if not expr:
+        await ctx.send("Usage: `!swdice XdY+Z` – e.g. `!swdice 4d8+2`")
+        return
+
+    match = re.fullmatch(r"\s*(\d+)[dD](\d+)\s*([+\-]\s*\d+)?\s*", expr)
+    if not match:
+        await ctx.send("❌ I couldn’t read that. Try something like `3d6+1`.")
+        return
+
+    qty   = int(match.group(1))
+    sides = int(match.group(2))
+    mod   = int(match.group(3).replace(" ", "")) if match.group(3) else 0
+
+    if qty <= 0 or sides <= 0:
+        await ctx.send("❌ Dice quantity and sides must both be positive numbers.")
+        return
+
+    rolls = [random.randint(1, sides) for _ in range(qty)]
+    total = sum(rolls) + mod
+
+    embed = discord.Embed(
+        title=f"🎲 {ctx.author.display_name} rolled {qty}d{sides}",
+        color=0x3498DB if mod == 0 else 0x9B59B6
+    )
+    embed.add_field(name="Rolls",    value=", ".join(map(str, rolls)), inline=False)
+    embed.add_field(name="Modifier", value=str(mod),                  inline=True)
+    embed.add_field(name="Total",    value=str(total),                inline=True)
+
+    await ctx.send(embed=embed)
+
+
+# ────────────────────────────────────────────────────────────────
+# Main entry
+# ────────────────────────────────────────────────────────────────
 if __name__ == "__main__":
     threading.Thread(target=run_health_server, daemon=True).start()
     bot.run(DISCORD_TOKEN)
