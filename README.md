@@ -1,102 +1,94 @@
-# Starwars WEG D6 Dice Bot
+# Star Wars WEG Dice Roller Bot
 
-A Discord bot for rolling dice using the **Star Wars West End Games D6** (Revised & Updated) system and managing character portrait URLs. It supports:
-
-* **ReUP dice rolling** with wild die mechanics, explosions, and complications
-* **Optional modifier** and **notes** on each roll
-* **Image thumbnails** for character portraits or inline images
-* **Suppressed URL previews** to avoid double-posting
-* **Persistent character storage** via GitHub (using a JSON file in your repo)
-* **Health‐check endpoint** to keep the free‐tier service alive
+A Discord bot that handles **Star Wars D6 “Revised & Expanded”** (ReUP) wild‑die rolls **and** regular polyhedral dice rolls. Built with **Python 3.11**, **discord.py**, and a tiny Flask health‑check server for uptime monitors.
 
 ---
 
-## Features & Commands
+## Features
 
-### 🎲 Dice Rolls (`!roll`)
+| Command                                         | Purpose                                                                                                    | Example                                                                  |
+| ----------------------------------------------- | ---------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
+| `!swroll <pool> [modifier] [image_url] [notes]` | Perform a ReUP‐style roll with exploding wild die, complications, and automatic image montage of the dice. | `!swroll 7 +2 https://i.imgur.com/droid.png "Shooting at stormtroopers"` |
+| `!swdice <XdY±Z>` (alias `!swd`)                | Classic polyhedral roll (e.g. 3d6, 2d20+4).                                                                | `!swdice 4d8+1`                                                          |
 
-Roll a ReUP D6 pool with optional modifier, thumbnail, and notes:
+### ReUP Logic Highlights
 
-```
-!roll <pool> [modifier] [image_url] [notes...]
-```
+* Exploding wild‑die on 6 (roll again, infinite).
+* Complication trigger on initial wild‑die 1.
+* Detects **critical failure** when the first two wild‑die results are `1 → 1`.
+* Embed shows: standard dice, wild‑die chain, explosions, complication flag, total, and GM guidance.
+* Generates a composite PNG of every die rolled (standard & wild) using images in `static/`.
 
-* **pool**: Number of dice to roll (e.g. `5`)
-* **modifier**: (optional) Integer to add to the final total
-* **image\_url**: (optional) URL to a portrait or icon to embed
-* **notes**: (optional) Quoted or unquoted text describing the action
+### Polyhedral Logic Highlights
 
-**Example:**
-
-```
-!roll 4 2 https://i.imgur.com/Chopper.png "Chopper uses electroshock prod"
-```
-
-Embed fields:
-
-* **Standard Dice**: Individual non‐wild rolls
-* **Wild Die**: Your single wild die (with explosions)
-* **Modifier**: Applied modifier
-* **Explosions**: Count of extra wild die rolls from 6s
-* **Complication**: Yes/No if a wild‐die 1 occurred
-* **Total**: Sum of all dice + modifier
-
-### 🗂️ Character Management (`!char`)
-
-Persist and retrieve character portrait URLs (stored in GitHub `character_sheets.json`):
-
-* `!char add "Name" URL`
-  Register a character with a portrait URL
-* `!char show "Name"`
-  Display the character’s thumbnail
-* `!char list`
-  List all registered characters
-* `!char remove "Name"`
-  Remove a character
-
-### 🔄 Health‐Check
-
-A Flask endpoint at `/` returns `OK` to keep your service awake on free hosting platforms like Render.
+* Accepts a single arithmetic term `XdY±Z` (e.g. `3d6`, `1d10-2`).
+* Rolls each die, sums, applies modifier, and returns an embed with the breakdown.
+* Easy to extend to expressions like `2d6+1d4+3` (see the comment in `starwars_weg_dice_bot.py`).
 
 ---
 
-## Setup & Deployment
+## Quick Start
 
-1. **Clone this repo** and add your static assets:
+```bash
+# Clone & install
+$ git clone https://github.com/yourname/starwars-weg-dice-bot.git
+$ cd starwars-weg-dice-bot
+$ python -m venv venv && source venv/bin/activate
+$ pip install -r requirements.txt
 
-   * `static/d6_std_1.png` … `static/d6_std_6.png`
-   * `static/d6_wild_1.png` … `static/d6_wild_6.png`
+# .env file (place in project root)
+DISCORD_TOKEN=YOUR_BOT_TOKEN_HERE
+PORT=5000               # optional – for health‑check server
 
-2. **Create environment variables** (e.g. in Render dashboard or `.env`):
+# Run locally
+$ python starwars_weg_dice_bot.py
+```
 
-   ```bash
-   DISCORD_TOKEN=your_bot_token
-   GITHUB_TOKEN=your_personal_access_token
-   GITHUB_OWNER=your_github_username
-   GITHUB_REPO=your_repo_name
-   ```
+### Docker
 
-   * **GITHUB\_TOKEN** needs `repo` scope to read/write the JSON
+```bash
+$ docker build -t weg-dice-bot .
+$ docker run -e DISCORD_TOKEN=YOUR_BOT_TOKEN -p 5000:5000 weg-dice-bot
+```
 
-3. **Install dependencies**:
+---
 
-   ```bash
-   pip install -r requirements.txt
-   ```
+## File Structure
 
-4. **Deploy** (e.g. push to GitHub & Render will auto‐deploy). Ensure `Message Content Intent` is enabled in the Discord Developer Portal.
+```
+├── starwars_weg_dice_bot.py   # main bot code
+├── static/                    # PNG assets for dice faces
+│   ├── d6_std_1.png           # 1–6 standard faces
+│   └── d6_wild_1.png          # 1–6 wild faces
+├── requirements.txt           # python‑package pins
+└── README.md                  # you are here
+```
 
-5. **Keep alive**: Use an uptime monitor (UptimeRobot, GitHub Actions) to ping the health‐check endpoint every 10–15 minutes.
+---
+
+## Environment Variables
+
+| Variable        | Purpose                                                                                                                  |
+| --------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| `DISCORD_TOKEN` | **Required.** Bot token from [https://discord.com/developers/applications](https://discord.com/developers/applications). |
+| `PORT`          | Port for Flask health endpoint (`/`). Defaults to **5000** – useful for PaaS uptime pings.                               |
 
 ---
 
 ## Contributing
 
-Pull requests, issues, and feature suggestions are welcome! Please ensure:
-
-* New dice mechanics adhere to West End Games ReUP rules
-* Character data stays in the GitHub JSON file
+1. Fork ☄️
+2. Create your feature branch (`git checkout -b feat/awesome`)
+3. Commit your changes (`git commit -am 'Add awesome feature'`)
+4. Push (`git push origin feat/awesome`)
+5. Open a Pull Request 🚀
 
 ---
 
-© 2025 Starwars WEG Dice Bot
+## License
+
+MIT. See `LICENSE` for details.
+
+---
+
+> “Never tell me the odds.” — **Han Solo**
